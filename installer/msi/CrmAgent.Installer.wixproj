@@ -9,6 +9,11 @@
     <TrayPublishDir>..\..\publish-tray</TrayPublishDir>
     <PackageVersion Condition="'$(PackageVersion)' == ''">1.0.0</PackageVersion>
     <DefineConstants>PublishDir=$(PublishDir);TrayPublishDir=$(TrayPublishDir);PackageVersion=$(PackageVersion)</DefineConstants>
+
+    <!-- ICE38/ICE43/ICE57 fire because ProgramMenuFolder is classified as a
+         user-profile directory, but in a per-machine install it resolves to the
+         All Users Start Menu. These are well-known false positives. -->
+    <SuppressIces>ICE38;ICE43;ICE57</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>
