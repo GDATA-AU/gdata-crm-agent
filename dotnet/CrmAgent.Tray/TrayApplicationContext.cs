@@ -18,6 +18,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _pollTimer;
     private StatusForm? _statusForm;
     private ConnectForm? _connectForm;
+    private readonly bool _showStatusAfterUpdate;
 
     public TrayApplicationContext(string? updatedFromVersion = null)
     {
@@ -74,11 +75,13 @@ public sealed class TrayApplicationContext : ApplicationContext
         _updateService.Start();
 
         // If relaunched after a successful update, show a success toast
+        // and defer opening the status window until the message loop is running
         if (updatedFromVersion is not null)
         {
             _notifyIcon.BalloonTipTitle = "Update Complete";
             _notifyIcon.BalloonTipText = $"GDATA CRM Agent updated to {UpdateService.CurrentVersion} successfully.";
             _notifyIcon.ShowBalloonTip(5_000);
+            _showStatusAfterUpdate = true;
         }
     }
 
@@ -158,6 +161,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         RefreshStatus();
         if (!ConfigStore.IsConfigured())
             ShowConnectForm();
+        else if (_showStatusAfterUpdate)
+            ShowStatusForm();
     }
 
     private void RefreshStatus()
