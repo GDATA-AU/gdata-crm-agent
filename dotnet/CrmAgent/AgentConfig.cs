@@ -16,10 +16,10 @@ public sealed class AgentConfig
 
     /// <summary>
     /// When <c>true</c> the MSSQL driver skips TLS certificate validation for on-premise
-    /// servers that use self-signed certificates.  Defaults to <c>false</c>; only enable
-    /// when the server certificate cannot be made trusted through normal means.
+    /// servers that use self-signed certificates.  Defaults to <c>true</c> because most
+    /// on-premises SQL Server instances use self-signed certificates.
     /// </summary>
-    public bool SqlTrustServerCertificate { get; init; } = false;
+    public bool SqlTrustServerCertificate { get; init; } = true;
 
     /// <summary>
     /// Timeout in seconds for individual outbound REST API page requests.
