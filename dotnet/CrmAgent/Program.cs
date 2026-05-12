@@ -78,7 +78,7 @@ try
                 out var hb) ? hb : 30_000,
             SqlTrustServerCertificate = bool.TryParse(
                 builder.Configuration["Agent:SqlTrustServerCertificate"] ?? Environment.GetEnvironmentVariable("SQL_TRUST_SERVER_CERTIFICATE"),
-                out var trustCert) && trustCert,
+                out var trustCert) ? trustCert : true,
             RestApiTimeoutSeconds = int.TryParse(
                 builder.Configuration["Agent:RestApiTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("REST_API_TIMEOUT_SECONDS"),
                 out var apiTimeout) && apiTimeout >= 1 ? apiTimeout : 300,
