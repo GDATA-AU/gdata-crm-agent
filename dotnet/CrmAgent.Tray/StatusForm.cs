@@ -331,6 +331,21 @@ public sealed class StatusForm : Form
         Theme.StylePrimary(_updateBtn);
     }
 
+    /// <summary>Called by TrayApplicationContext when a download fails to reset the UI.</summary>
+    internal void ResetDownloadProgress()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(ResetDownloadProgress);
+            return;
+        }
+
+        _downloadProgress.Visible = false;
+        _downloadProgress.Value = 0;
+        _updateBtn.Text = "Check for Updates";
+        _updateBtn.Enabled = true;
+    }
+
     /// <summary>Called by TrayApplicationContext when UpdateService reports download progress.</summary>
     internal void SetDownloadProgress(long bytesReceived, long totalBytes)
     {

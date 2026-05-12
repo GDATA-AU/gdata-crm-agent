@@ -69,6 +69,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _updateService = new UpdateService();
         _updateService.UpdateReady += OnUpdateReady;
         _updateService.DownloadProgress += OnDownloadProgress;
+        _updateService.DownloadFailed += OnDownloadFailed;
         _updateService.ApplyingUpdate += OnApplyingUpdate;
         _updateService.Start();
 
@@ -97,6 +98,11 @@ public sealed class TrayApplicationContext : ApplicationContext
     private void OnDownloadProgress(long bytesReceived, long totalBytes)
     {
         _statusForm?.SetDownloadProgress(bytesReceived, totalBytes);
+    }
+
+    private void OnDownloadFailed()
+    {
+        _statusForm?.ResetDownloadProgress();
     }
 
     private void OnApplyUpdate(object? sender, EventArgs e)

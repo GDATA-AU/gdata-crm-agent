@@ -29,8 +29,11 @@ public sealed class UpdateService : IDisposable
     /// <summary>Fired on the UI thread during MSI download with (bytesReceived, totalBytes). totalBytes is -1 if unknown.</summary>
     public event Action<long, long>? DownloadProgress;
 
-    /// <summary>Fired just before the update watchdog script launches. Subscribers should close UI.</summary>
+    /// <summary>Fired after the update watchdog script has been launched successfully. Subscribers should close UI.</summary>
     public event Action? ApplyingUpdate;
+
+    /// <summary>Fired on the UI thread when an MSI download fails mid-stream. Subscribers should reset download UI.</summary>
+    public event Action? DownloadFailed;
 
     /// <summary>The latest version available on GitHub, or null if not yet checked / up-to-date.</summary>
     public string? AvailableVersion { get; private set; }
@@ -148,20 +151,32 @@ public sealed class UpdateService : IDisposable
             var tempPath = Path.Combine(Path.GetTempPath(), $"GDATACrmAgent-{release.TagName}.msi");
             if (!File.Exists(tempPath))
             {
-                using var response = await _http.GetAsync(msiAsset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
-                var totalBytes = response.Content.Headers.ContentLength ?? -1L;
-                await using var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                using var contentStream = await response.Content.ReadAsStreamAsync();
-                var buffer = new byte[81920];
-                long bytesReceived = 0;
-                int bytesRead;
-                while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                var partPath = tempPath + ".part";
+                try
                 {
-                    await fs.WriteAsync(buffer.AsMemory(0, bytesRead));
-                    bytesReceived += bytesRead;
-                    DownloadProgress?.Invoke(bytesReceived, totalBytes);
+                    using var response = await _http.GetAsync(msiAsset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                    response.EnsureSuccessStatusCode();
+                    var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                    await using var fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    using var contentStream = await response.Content.ReadAsStreamAsync();
+                    var buffer = new byte[81920];
+                    long bytesReceived = 0;
+                    int bytesRead;
+                    while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                    {
+                        await fs.WriteAsync(buffer.AsMemory(0, bytesRead));
+                        bytesReceived += bytesRead;
+                        DownloadProgress?.Invoke(bytesReceived, totalBytes);
+                    }
                 }
+                catch
+                {
+                    try { File.Delete(partPath); } catch { /* best effort cleanup */ }
+                    DownloadFailed?.Invoke();
+                    return;
+                }
+
+                File.Move(partPath, tempPath);
             }
 
             AvailableVersion = release.TagName;
