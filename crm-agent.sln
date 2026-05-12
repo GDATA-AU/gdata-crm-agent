@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrmAgent", "dotnet\CrmAgent
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrmAgent.Tray", "dotnet\CrmAgent.Tray\CrmAgent.Tray.csproj", "{B2C1D8E4-5F3A-4B7C-8E2D-1A9F6B0C3D7E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrmAgent.Tests", "dotnet\CrmAgent.Tests\CrmAgent.Tests.csproj", "{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,6 +24,10 @@ Global
 		{B2C1D8E4-5F3A-4B7C-8E2D-1A9F6B0C3D7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2C1D8E4-5F3A-4B7C-8E2D-1A9F6B0C3D7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2C1D8E4-5F3A-4B7C-8E2D-1A9F6B0C3D7E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -29,6 +35,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{5FCB6A66-450E-07CF-09F1-B9D29DCF4A04} = {71E6E750-85FD-B5BC-4321-E01377EC6231}
 		{B2C1D8E4-5F3A-4B7C-8E2D-1A9F6B0C3D7E} = {71E6E750-85FD-B5BC-4321-E01377EC6231}
+		{C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F} = {71E6E750-85FD-B5BC-4321-E01377EC6231}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FDB92C96-54A4-427B-8E67-C19B09B2B804}

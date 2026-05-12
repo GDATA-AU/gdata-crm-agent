@@ -32,6 +32,8 @@
       <Directory Id="PROGRAMDATADIR" Name="GDATA CRM Agent" />
     </StandardDirectory>
 
+    <StandardDirectory Id="SystemFolder" />
+
     <Feature Id="MainFeature" Title="GDATA CRM Agent" Level="1">
       <ComponentGroupRef Id="ServiceFiles" />
       <ComponentGroupRef Id="HarvestedServiceFiles" />
@@ -108,6 +110,14 @@
       ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
       Return="ignore" />
 
+    <!-- Launch tray app after fresh interactive installs so first-run setup appears immediately. -->
+    <CustomAction
+      Id="LaunchTrayAfterInstall"
+      Directory="SystemFolder"
+      Execute="immediate"
+      ExeCommand='[SystemFolder]cmd.exe /c start "" "[TRAYFOLDER]CrmAgentTray.exe"'
+      Return="ignore" />
+
     <InstallExecuteSequence>
       <Custom Action="SetServiceRecoveryActions" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
@@ -116,6 +126,10 @@
       <Custom Action="KillTrayOnUninstall" Before="StopServices" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="CleanProgramDataDir" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
+
+    <InstallUISequence>
+      <Custom Action="LaunchTrayAfterInstall" After="ExecuteAction" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND UILevel &gt;= 5" />
+    </InstallUISequence>
   </Package>
 
   <Fragment>
