@@ -73,12 +73,13 @@ public sealed class TrayApplicationContext : ApplicationContext
         _updateService.ApplyingUpdate += OnApplyingUpdate;
         _updateService.Start();
 
-        // If relaunched after a successful update, show a success toast
+        // If relaunched after a successful update, show a success toast and open the status window
         if (updatedFromVersion is not null)
         {
             _notifyIcon.BalloonTipTitle = "Update Complete";
             _notifyIcon.BalloonTipText = $"GDATA CRM Agent updated to {UpdateService.CurrentVersion} successfully.";
             _notifyIcon.ShowBalloonTip(5_000);
+            ShowStatusForm();
         }
     }
 
