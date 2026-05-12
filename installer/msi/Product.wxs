@@ -189,9 +189,9 @@
       <Custom Action="SetServiceRecoveryActions" After="SetServiceDescription" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="KillTrayOnUpgrade" Before="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="StopExistingService" After="KillTrayOnUpgrade" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
-      <Custom Action="DeleteExistingService" After="StopExistingService" Before="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
+      <Custom Action="KillTrayOnUpgrade" Before="StopExistingService" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="StopExistingService" Before="DeleteExistingService" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
+      <Custom Action="DeleteExistingService" Before="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="KillTrayOnUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="StopServiceOnUninstall" After="KillTrayOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="DeleteServiceOnUninstall" After="StopServiceOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
