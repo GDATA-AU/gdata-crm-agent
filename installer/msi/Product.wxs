@@ -16,6 +16,11 @@
                   AllowSameVersionUpgrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Block install when a reboot is pending — a prior service deletion
+         may not have completed, causing sc.exe create to fail with 1072. -->
+    <Launch Condition="NOT MsiSystemRebootPending"
+            Message="A system reboot is required before installing [ProductName]. Please restart your computer and try again." />
+
     <!-- Control Panel / Apps entry metadata -->
     <Property Id="ARPPRODUCTICON" Value="TrayExeIcon" />
     <Property Id="ARPHELPLINK" Value="https://gdata.com.au" />
