@@ -11,7 +11,7 @@
     <Company>GDATA Australia</Company>
     <Description>GDATA CRM Agent — system tray companion for the GDATA Customer Portal</Description>
     <Copyright>© 2026 GDATA Australia</Copyright>
-    <AssemblyName>CrmAgentTray</AssemblyName>
+    <AssemblyName>GDATAAgentTray</AssemblyName>
     <RootNamespace>CrmAgent.Tray</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Allows cross-compiling the Windows target from non-Windows (e.g. Linux dev containers) -->

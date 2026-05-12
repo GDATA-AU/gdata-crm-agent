@@ -88,7 +88,7 @@ public static class ConfigStore
 
     private static void SaveElevated(string json)
     {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"crmagent-{Guid.NewGuid():N}.json");
+        var tempFile = Path.Combine(Path.GetTempPath(), $"gdataagent-{Guid.NewGuid():N}.json");
         File.WriteAllText(tempFile, json);
 
         try

@@ -39,17 +39,21 @@
 
     <StandardDirectory Id="SystemFolder" />
 
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="STARTMENUFOLDER" Name="GDATA CRM Agent" />
+    </StandardDirectory>
+
     <Feature Id="MainFeature" Title="GDATA CRM Agent" Level="1">
       <ComponentGroupRef Id="ServiceFiles" />
       <ComponentGroupRef Id="HarvestedServiceFiles" />
       <ComponentGroupRef Id="HarvestedTrayFiles" />
       <ComponentRef Id="ProgramDataPermissionsComponent" />
       <ComponentRef Id="RunKeyComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
     </Feature>
 
     <!--
-      Keep service recovery behavior aligned with setup.iss:
-      restart/10s, restart/30s, restart/60s.
+      Service recovery: restart/10s, restart/30s, restart/60s.
     -->
     <CustomAction
       Id="SetServiceRecoveryActions"
@@ -90,13 +94,13 @@
       Directory="SystemFolder"
       Execute="deferred"
       Impersonate="no"
-      ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM GDATAAgentTray.exe'
       Return="ignore" />
 
     <!--
       Force-remove ProgramData\GDATA CRM Agent on uninstall (contains runtime
       config/credentials). RemoveFolder only deletes empty dirs, so we use
-      rmdir /s /q to match the Inno Setup's DelTree behavior.
+      rmdir /s /q to ensure full cleanup.
     -->
     <CustomAction
       Id="CleanProgramDataDir"
@@ -112,12 +116,21 @@
       Directory="SystemFolder"
       Execute="deferred"
       Impersonate="no"
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM GDATAAgentTray.exe'
+      Return="ignore" />
+
+    <!-- Kill legacy-named tray app from older installs during upgrades. -->
+    <CustomAction
+      Id="KillLegacyTrayOnUpgrade"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
       ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
       Return="ignore" />
 
     <!--
       Stop and remove any pre-existing service before (re-)creating it.
-      Handles migration from Inno-Setup / Setup.bat installs and avoids
+      Handles migration from earlier installs and avoids
       ERROR_SERVICE_MARKED_DELETE (1072) during MSI major upgrades.
     -->
     <CustomAction
@@ -142,7 +155,7 @@
       PE header that causes the MSI InstallServices action to fail with
       Error 1923 on certain Windows Server editions.  sc.exe create only
       records the binary path without validating the executable, matching
-      the proven approach used by Setup.bat and setup.iss.
+      a proven approach that avoids PE-header validation issues.
     -->
     <CustomAction
       Id="CreateService"
@@ -185,7 +198,7 @@
       Id="LaunchTrayAfterInstall"
       Directory="SystemFolder"
       Execute="immediate"
-      ExeCommand='[SystemFolder]cmd.exe /c start "" "[TRAYFOLDER]CrmAgentTray.exe"'
+      ExeCommand='[SystemFolder]cmd.exe /c start "" "[TRAYFOLDER]GDATAAgentTray.exe"'
       Return="ignore" />
 
     <InstallExecuteSequence>
@@ -194,7 +207,8 @@
       <Custom Action="SetServiceRecoveryActions" After="SetServiceDescription" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="KillTrayOnUpgrade" Before="StopExistingService" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="KillLegacyTrayOnUpgrade" Before="KillTrayOnUpgrade" Condition="WIX_UPGRADE_DETECTED" />
+      <Custom Action="KillTrayOnUpgrade" Before="StopExistingService" Condition="WIX_UPGRADE_DETECTED" />
       <Custom Action="StopExistingService" Before="DeleteExistingService" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="DeleteExistingService" Before="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="KillTrayOnUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
@@ -237,19 +251,41 @@
         KeyPath="yes" />
     </Component>
 
+    <Component Id="StartMenuShortcutComponent" Directory="STARTMENUFOLDER" Guid="*">
+      <Shortcut
+        Id="TrayAppShortcut"
+        Name="GDATA CRM Agent"
+        Target="[TRAYFOLDER]GDATAAgentTray.exe"
+        WorkingDirectory="TRAYFOLDER"
+        Icon="TrayExeIcon" />
+      <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+      <RegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\GDATA-AU\GDATA CRM Agent"
+        Name="StartMenuShortcut"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+
     <Component Id="RunKeyComponent" Directory="INSTALLFOLDER" Guid="*">
       <RegistryValue
         Root="HKLM"
         Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-        Name="GDATACrmAgent"
+        Name="GDATAAgent"
         Type="string"
-        Value="&quot;[TRAYFOLDER]CrmAgentTray.exe&quot;"
+        Value="&quot;[TRAYFOLDER]GDATAAgentTray.exe&quot;"
         KeyPath="yes" />
       <!-- Remove legacy Run entry left by older installers to prevent duplicate tray auto-starts -->
       <RemoveRegistryValue
         Root="HKLM"
         Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
         Name="LGACrmAgent" />
+      <!-- Remove legacy Run entry from pre-rename installers -->
+      <RemoveRegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        Name="GDATACrmAgent" />
     </Component>
   </Fragment>
 </Wix>

@@ -6,9 +6,6 @@ publish-tray/
 installer/msi/bin/
 installer/msi/obj/
 
-# Inno Setup output
-installer/Output/
-
 # OS files
 .DS_Store
 Thumbs.db

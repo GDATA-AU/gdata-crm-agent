@@ -44,7 +44,7 @@ public sealed class UpdateService : IDisposable
     public UpdateService()
     {
         _http = new HttpClient();
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"CrmAgentTray/{CurrentVersion}");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"GDATAAgentTray/{CurrentVersion}");
         _http.Timeout = TimeSpan.FromSeconds(30);
 
         _timer = new System.Windows.Forms.Timer();
@@ -79,7 +79,7 @@ public sealed class UpdateService : IDisposable
         //  1. Runs the MSI silently
         //  2. Relaunches the tray via explorer.exe (de-elevated) with --updated-from on success
         //  3. Self-deletes
-        var scriptPath = Path.Combine(Path.GetTempPath(), $"CrmAgentUpdate-{version}.cmd");
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"GDATAAgentUpdate-{version}.cmd");
         var scriptContent = $"""
             @echo off
             msiexec /qn /i "{DownloadedMsiPath}"
@@ -148,7 +148,7 @@ public sealed class UpdateService : IDisposable
             if (msiAsset?.BrowserDownloadUrl is null) return;
 
             // Download to temp
-            var tempPath = Path.Combine(Path.GetTempPath(), $"GDATACrmAgent-{release.TagName}.msi");
+            var tempPath = Path.Combine(Path.GetTempPath(), $"GDATAAgent-{release.TagName}.msi");
             if (!File.Exists(tempPath))
             {
                 var partPath = tempPath + ".part";

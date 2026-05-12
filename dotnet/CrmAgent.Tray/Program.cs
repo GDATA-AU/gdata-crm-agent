@@ -2,7 +2,7 @@ using CrmAgent.Tray;
 
 // Prevent multiple tray instances using a named mutex.
 bool createdNew;
-using var mutex = new Mutex(true, "Global\\CrmAgentTray_4F8A2C1D", out createdNew);
+using var mutex = new Mutex(true, "Global\\GDATAAgentTray_4F8A2C1D", out createdNew);
 if (!createdNew)
     return;
 
