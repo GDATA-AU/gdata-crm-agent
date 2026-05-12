@@ -1,0 +1,37 @@
+{
+  "name": "crm-agent",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-10.0-noble",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "github.vscode-pull-request-github",
+        "github.copilot-chat"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "crm-agent.sln",
+        "files.autoSave": "afterDelay",
+        "editor.formatOnSave": true,
+        "files.exclude": {
+          "**/bin": true,
+          "**/obj": true
+        }
+      }
+    }
+  },
+
+  "postCreateCommand": "dotnet restore crm-agent.sln",
+
+  "remoteEnv": {
+    "DOTNET_WATCH_SUPPRESS_MSBUILD_INCREMENTALISM": "1"
+  },
+
+  "forwardPorts": [],
+
+  "mounts": [],
+
+  "portsAttributes": {}
+}
