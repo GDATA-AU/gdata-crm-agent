@@ -111,6 +111,27 @@
       Return="ignore" />
 
     <!--
+      Stop and remove any pre-existing service before (re-)creating it.
+      Handles migration from Inno-Setup / Setup.bat installs and avoids
+      ERROR_SERVICE_MARKED_DELETE (1072) during MSI major upgrades.
+    -->
+    <CustomAction
+      Id="StopExistingService"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe stop gdata-agent'
+      Return="ignore" />
+
+    <CustomAction
+      Id="DeleteExistingService"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe delete gdata-agent'
+      Return="ignore" />
+
+    <!--
       Register the Windows service via sc.exe instead of the native MSI
       ServiceInstall table.  Single-file .NET executables have a non-standard
       PE header that causes the MSI InstallServices action to fail with
@@ -169,6 +190,8 @@
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="KillTrayOnUpgrade" Before="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="StopExistingService" After="KillTrayOnUpgrade" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeleteExistingService" After="StopExistingService" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="KillTrayOnUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="StopServiceOnUninstall" After="KillTrayOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="DeleteServiceOnUninstall" After="StopServiceOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
