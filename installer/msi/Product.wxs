@@ -39,17 +39,21 @@
 
     <StandardDirectory Id="SystemFolder" />
 
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="STARTMENUFOLDER" Name="GDATA CRM Agent" />
+    </StandardDirectory>
+
     <Feature Id="MainFeature" Title="GDATA CRM Agent" Level="1">
       <ComponentGroupRef Id="ServiceFiles" />
       <ComponentGroupRef Id="HarvestedServiceFiles" />
       <ComponentGroupRef Id="HarvestedTrayFiles" />
       <ComponentRef Id="ProgramDataPermissionsComponent" />
       <ComponentRef Id="RunKeyComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
     </Feature>
 
     <!--
-      Keep service recovery behavior aligned with setup.iss:
-      restart/10s, restart/30s, restart/60s.
+      Service recovery: restart/10s, restart/30s, restart/60s.
     -->
     <CustomAction
       Id="SetServiceRecoveryActions"
@@ -96,7 +100,7 @@
     <!--
       Force-remove ProgramData\GDATA CRM Agent on uninstall (contains runtime
       config/credentials). RemoveFolder only deletes empty dirs, so we use
-      rmdir /s /q to match the Inno Setup's DelTree behavior.
+      rmdir /s /q to ensure full cleanup.
     -->
     <CustomAction
       Id="CleanProgramDataDir"
@@ -126,7 +130,7 @@
 
     <!--
       Stop and remove any pre-existing service before (re-)creating it.
-      Handles migration from Inno-Setup / Setup.bat installs and avoids
+      Handles migration from earlier installs and avoids
       ERROR_SERVICE_MARKED_DELETE (1072) during MSI major upgrades.
     -->
     <CustomAction
@@ -151,7 +155,7 @@
       PE header that causes the MSI InstallServices action to fail with
       Error 1923 on certain Windows Server editions.  sc.exe create only
       records the binary path without validating the executable, matching
-      the proven approach used by Setup.bat and setup.iss.
+      a proven approach that avoids PE-header validation issues.
     -->
     <CustomAction
       Id="CreateService"
@@ -242,6 +246,23 @@
         Root="HKLM"
         Key="SOFTWARE\GDATA-AU\GDATA CRM Agent"
         Name="ProgramDataInitialized"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+
+    <Component Id="StartMenuShortcutComponent" Directory="STARTMENUFOLDER" Guid="*">
+      <Shortcut
+        Id="TrayAppShortcut"
+        Name="GDATA CRM Agent"
+        Target="[TRAYFOLDER]GDATAAgentTray.exe"
+        WorkingDirectory="TRAYFOLDER"
+        Icon="TrayExeIcon" />
+      <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+      <RegistryValue
+        Root="HKCU"
+        Key="SOFTWARE\GDATA-AU\GDATA CRM Agent"
+        Name="StartMenuShortcut"
         Type="integer"
         Value="1"
         KeyPath="yes" />
