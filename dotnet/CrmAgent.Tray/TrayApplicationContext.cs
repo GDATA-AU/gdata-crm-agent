@@ -121,6 +121,9 @@ public sealed class TrayApplicationContext : ApplicationContext
             _statusForm.Close();
             _statusForm = null;
         }
+
+        // Exit the tray app so the MSI can replace files
+        Exit();
     }
 
     private async Task CheckForUpdateManual()
