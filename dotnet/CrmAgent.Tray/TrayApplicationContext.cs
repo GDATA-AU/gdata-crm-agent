@@ -68,6 +68,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         // Start background update checker
         _updateService = new UpdateService();
         _updateService.UpdateReady += OnUpdateReady;
+        _updateService.DownloadProgress += OnDownloadProgress;
         _updateService.ApplyingUpdate += OnApplyingUpdate;
         _updateService.Start();
 
@@ -91,6 +92,11 @@ public sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.ShowBalloonTip(5_000);
         // Notify the StatusForm if it's open
         _statusForm?.SetUpdateAvailable(version);
+    }
+
+    private void OnDownloadProgress(long bytesReceived, long totalBytes)
+    {
+        _statusForm?.SetDownloadProgress(bytesReceived, totalBytes);
     }
 
     private void OnApplyUpdate(object? sender, EventArgs e)

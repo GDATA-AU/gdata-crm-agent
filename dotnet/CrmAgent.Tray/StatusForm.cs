@@ -21,6 +21,7 @@ public sealed class StatusForm : Form
     private readonly Label _versionLabel;
     private readonly Button _startStopBtn;
     private readonly Button _updateBtn;
+    private readonly ProgressBar _downloadProgress;
     private readonly ActivityFeedPanel _activityFeed;
     private readonly System.Windows.Forms.Timer _refreshTimer;
     private readonly LogTailer _logTailer = new();
@@ -105,6 +106,18 @@ public sealed class StatusForm : Form
             Theme.StylePrimary(_updateBtn);
         }
 
+        _downloadProgress = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Value = 0,
+            Height = 6,
+            Width = 200,
+            Visible = false,
+            Margin = new Padding(0, 8, 0, 0),
+            Style = ProgressBarStyle.Continuous,
+        };
+
         _startStopBtn.Click += OnStartStop;
         configBtn.Click += (_, _) =>
         {
@@ -163,6 +176,7 @@ public sealed class StatusForm : Form
         headerLayout.Controls.Add(_portalLabel);
         headerLayout.Controls.Add(_versionLabel);
         headerLayout.Controls.Add(btnRow);
+        headerLayout.Controls.Add(_downloadProgress);
         headerCard.Controls.Add(headerLayout);
 
         // -- Activity label sits between header and log --
@@ -311,8 +325,42 @@ public sealed class StatusForm : Form
             Invoke(() => SetUpdateAvailable(version));
             return;
         }
+        _downloadProgress.Visible = false;
         _updateBtn.Text = $"Update to {version}";
+        _updateBtn.Enabled = true;
         Theme.StylePrimary(_updateBtn);
+    }
+
+    /// <summary>Called by TrayApplicationContext when UpdateService reports download progress.</summary>
+    internal void SetDownloadProgress(long bytesReceived, long totalBytes)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => SetDownloadProgress(bytesReceived, totalBytes));
+            return;
+        }
+
+        if (!_downloadProgress.Visible)
+        {
+            _downloadProgress.Visible = true;
+            _updateBtn.Enabled = false;
+        }
+
+        if (totalBytes > 0)
+        {
+            var pct = (int)(bytesReceived * 100 / totalBytes);
+            _downloadProgress.Style = ProgressBarStyle.Continuous;
+            _downloadProgress.Value = Math.Min(pct, 100);
+            var mb = bytesReceived / (1024.0 * 1024.0);
+            var totalMb = totalBytes / (1024.0 * 1024.0);
+            _updateBtn.Text = $"Downloading… {mb:F1} / {totalMb:F1} MB";
+        }
+        else
+        {
+            _downloadProgress.Style = ProgressBarStyle.Marquee;
+            var mb = bytesReceived / (1024.0 * 1024.0);
+            _updateBtn.Text = $"Downloading… {mb:F1} MB";
+        }
     }
 
     protected override void Dispose(bool disposing)
