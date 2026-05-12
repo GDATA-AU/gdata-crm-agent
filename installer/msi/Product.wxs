@@ -90,7 +90,7 @@
       Directory="SystemFolder"
       Execute="deferred"
       Impersonate="no"
-      ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM GDATAAgentTray.exe'
       Return="ignore" />
 
     <!--
@@ -109,6 +109,15 @@
     <!-- Kill tray app during upgrades so files can be replaced. -->
     <CustomAction
       Id="KillTrayOnUpgrade"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM GDATAAgentTray.exe'
+      Return="ignore" />
+
+    <!-- Kill legacy-named tray app from older installs during upgrades. -->
+    <CustomAction
+      Id="KillLegacyTrayOnUpgrade"
       Directory="SystemFolder"
       Execute="deferred"
       Impersonate="no"
@@ -185,7 +194,7 @@
       Id="LaunchTrayAfterInstall"
       Directory="SystemFolder"
       Execute="immediate"
-      ExeCommand='[SystemFolder]cmd.exe /c start "" "[TRAYFOLDER]CrmAgentTray.exe"'
+      ExeCommand='[SystemFolder]cmd.exe /c start "" "[TRAYFOLDER]GDATAAgentTray.exe"'
       Return="ignore" />
 
     <InstallExecuteSequence>
@@ -194,6 +203,7 @@
       <Custom Action="SetServiceRecoveryActions" After="SetServiceDescription" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="KillLegacyTrayOnUpgrade" Before="KillTrayOnUpgrade" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="KillTrayOnUpgrade" Before="StopExistingService" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="StopExistingService" Before="DeleteExistingService" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="DeleteExistingService" Before="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
@@ -241,15 +251,20 @@
       <RegistryValue
         Root="HKLM"
         Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-        Name="GDATACrmAgent"
+        Name="GDATAAgent"
         Type="string"
-        Value="&quot;[TRAYFOLDER]CrmAgentTray.exe&quot;"
+        Value="&quot;[TRAYFOLDER]GDATAAgentTray.exe&quot;"
         KeyPath="yes" />
       <!-- Remove legacy Run entry left by older installers to prevent duplicate tray auto-starts -->
       <RemoveRegistryValue
         Root="HKLM"
         Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
         Name="LGACrmAgent" />
+      <!-- Remove legacy Run entry from pre-rename installers -->
+      <RemoveRegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        Name="GDATACrmAgent" />
     </Component>
   </Fragment>
 </Wix>

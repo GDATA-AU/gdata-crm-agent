@@ -17,7 +17,7 @@
 ; Path to the published outputs, relative to this script
 #define PublishDir     ".\..\publish"
 #define TrayPublishDir ".\..\publish-tray"
-#define TrayExeName    "CrmAgentTray.exe"
+#define TrayExeName    "GDATAAgentTray.exe"
 
 [Setup]
 AppId={{A3F6B2D1-4C8E-4F2A-9D3B-7E1C5A0F8B2D}
@@ -61,12 +61,16 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 [Registry]
 ; Auto-start the tray app for all users on login (HKLM so it works regardless of which account logs in)
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "GDATACrmAgent"; \
+  ValueType: string; ValueName: "GDATAAgent"; \
   ValueData: """{app}\tray\{#TrayExeName}"""; \
   Flags: uninsdeletevalue
 ; Remove legacy Run entry left by older installers (prevents duplicate tray auto-starts on upgrade)
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: none; ValueName: "LGACrmAgent"; \
+  Flags: deletevalue
+; Remove legacy Run entry from pre-rename installers
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: none; ValueName: "GDATACrmAgent"; \
   Flags: deletevalue
 
 [Run]
@@ -99,6 +103,8 @@ var
   ResultCode: Integer;
 begin
   Exec('taskkill.exe', '/F /IM {#TrayExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Also kill legacy-named tray from pre-rename installs
+  Exec('taskkill.exe', '/F /IM CrmAgentTray.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(1000);
 end;
 
