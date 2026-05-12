@@ -52,12 +52,12 @@ try
     // placeholder values in appsettings.json don't shadow environment variables.
     static string? NonEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
 
-    var portalUrl = NonEmpty(builder.Configuration["Agent:PortalUrl"])
-        ?? NonEmpty(Environment.GetEnvironmentVariable("PORTAL_URL"));
-    var apiKey = NonEmpty(builder.Configuration["Agent:AgentApiKey"])
-        ?? NonEmpty(Environment.GetEnvironmentVariable("AGENT_API_KEY"));
-    var storageConnectionString = NonEmpty(builder.Configuration["Agent:AzureStorageConnectionString"])
-        ?? NonEmpty(Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING"));
+    var portalUrl = (NonEmpty(builder.Configuration["Agent:PortalUrl"])
+        ?? NonEmpty(Environment.GetEnvironmentVariable("PORTAL_URL")))?.Trim();
+    var apiKey = (NonEmpty(builder.Configuration["Agent:AgentApiKey"])
+        ?? NonEmpty(Environment.GetEnvironmentVariable("AGENT_API_KEY")))?.Trim();
+    var storageConnectionString = (NonEmpty(builder.Configuration["Agent:AzureStorageConnectionString"])
+        ?? NonEmpty(Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING")))?.Trim();
 
     var hasRequiredConfig = !string.IsNullOrWhiteSpace(portalUrl)
         && !string.IsNullOrWhiteSpace(apiKey)

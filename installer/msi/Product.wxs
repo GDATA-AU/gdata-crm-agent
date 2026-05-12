@@ -128,7 +128,7 @@
     </InstallExecuteSequence>
 
     <InstallUISequence>
-      <Custom Action="LaunchTrayAfterInstall" After="ExecuteAction" Condition="NOT Installed AND UILevel &gt;= 5" />
+      <Custom Action="LaunchTrayAfterInstall" After="ExecuteAction" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND UILevel &gt;= 5" />
     </InstallUISequence>
   </Package>
 
