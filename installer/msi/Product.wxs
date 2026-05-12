@@ -110,6 +110,50 @@
       ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
       Return="ignore" />
 
+    <!--
+      Register the Windows service via sc.exe instead of the native MSI
+      ServiceInstall table.  Single-file .NET executables have a non-standard
+      PE header that causes the MSI InstallServices action to fail with
+      Error 1923 on certain Windows Server editions.  sc.exe create only
+      records the binary path without validating the executable, matching
+      the proven approach used by Setup.bat and setup.iss.
+    -->
+    <CustomAction
+      Id="CreateService"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe create gdata-agent binPath= "\"[INSTALLFOLDER]CrmAgent.exe\"" start= auto DisplayName= "GDATA CRM Agent"'
+      Return="check" />
+
+    <CustomAction
+      Id="SetServiceDescription"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe description gdata-agent "Polls the council portal for extraction jobs and writes results to Azure Blob Storage."'
+      Return="ignore" />
+
+    <!--
+      Stop and delete the service on uninstall via sc.exe, replacing the
+      native ServiceControl Remove behavior.
+    -->
+    <CustomAction
+      Id="StopServiceOnUninstall"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe stop gdata-agent'
+      Return="ignore" />
+
+    <CustomAction
+      Id="DeleteServiceOnUninstall"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe delete gdata-agent'
+      Return="ignore" />
+
     <!-- Launch tray app after fresh interactive installs so first-run setup appears immediately. -->
     <CustomAction
       Id="LaunchTrayAfterInstall"
@@ -119,11 +163,15 @@
       Return="ignore" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetServiceRecoveryActions" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="CreateService" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="SetServiceDescription" After="CreateService" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="SetServiceRecoveryActions" After="SetServiceDescription" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="GrantProgramDataPermissions" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="KillTrayOnUpgrade" Before="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="KillTrayOnUninstall" Before="StopServices" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="KillTrayOnUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="StopServiceOnUninstall" After="KillTrayOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="DeleteServiceOnUninstall" After="StopServiceOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="CleanProgramDataDir" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
@@ -136,21 +184,6 @@
     <ComponentGroup Id="ServiceFiles" Directory="INSTALLFOLDER">
       <Component Id="ServiceExeComponent" Guid="*">
         <File Id="ServiceExeFile" Source="$(var.PublishDir)\CrmAgent.exe" KeyPath="yes" />
-        <ServiceInstall
-          Id="InstallWindowsService"
-          Name="gdata-agent"
-          DisplayName="GDATA CRM Agent"
-          Description="Polls the council portal for extraction jobs and writes results to Azure Blob Storage."
-          Type="ownProcess"
-          Start="auto"
-          ErrorControl="normal"
-          Vital="yes" />
-        <ServiceControl
-          Id="ControlWindowsService"
-          Name="gdata-agent"
-          Stop="both"
-          Remove="uninstall"
-          Wait="yes" />
       </Component>
 
       <!-- Included explicitly to match single-file publish output. -->
