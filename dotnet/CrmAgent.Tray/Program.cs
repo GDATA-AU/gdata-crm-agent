@@ -6,15 +6,18 @@ using var mutex = new Mutex(true, "Global\\GDATAAgentTray_4F8A2C1D", out created
 if (!createdNew)
     return;
 
-// Check for --updated-from flag (set by the update watchdog script)
+// Check for updated-from sentinel file written by the update watchdog script.
+// We use a file because explorer.exe (used to de-elevate) doesn't forward args.
 string? updatedFromVersion = null;
-for (int i = 0; i < args.Length - 1; i++)
+var sentinelPath = Path.Combine(Path.GetTempPath(), "GDATAAgent-updated-from.txt");
+if (File.Exists(sentinelPath))
 {
-    if (args[i] == "--updated-from")
+    try
     {
-        updatedFromVersion = args[i + 1];
-        break;
+        updatedFromVersion = File.ReadAllText(sentinelPath).Trim();
+        File.Delete(sentinelPath);
     }
+    catch { /* best effort */ }
 }
 
 Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
