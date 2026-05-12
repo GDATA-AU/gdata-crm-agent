@@ -239,7 +239,7 @@ public sealed class ConnectForm : Form
 
         try
         {
-            ServiceManager.Start();
+            ServiceManager.Restart();
             ServiceStarted = true;
         }
         catch (Exception ex)

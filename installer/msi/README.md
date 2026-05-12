@@ -40,6 +40,7 @@ Expected output:
 - Registers Windows service `gdata-agent` (auto start, removed on uninstall)
 - Applies service recovery settings via `sc.exe failure ...`
 - Creates HKLM Run entry for tray app (`GDATACrmAgent`)
+- Launches tray app automatically after fresh interactive install
 - Grants Modify access to `ProgramData\GDATA CRM Agent` for built-in Users group
 - Kills tray process on uninstall
 - Removes ProgramData folder on uninstall
