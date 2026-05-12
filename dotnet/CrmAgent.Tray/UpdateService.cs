@@ -78,6 +78,7 @@ public sealed class UpdateService : IDisposable
         // Write a sentinel file so the tray app knows it was relaunched after an update.
         // We cannot pass args through explorer.exe (it doesn't forward them).
         var sentinelPath = Path.Combine(Path.GetTempPath(), "GDATAAgent-updated-from.txt");
+        try { File.Delete(sentinelPath); } catch { /* remove any stale sentinel */ }
 
         // Build a temp batch script that:
         //  1. Runs the MSI silently
