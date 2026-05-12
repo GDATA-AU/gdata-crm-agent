@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+    Name="GDATA CRM Agent"
+    Manufacturer="GDATA-AU"
+    Version="$(var.PackageVersion)"
+    UpgradeCode="A3F6B2D1-4C8E-4F2A-9D3B-7E1C5A0F8B2D"
+    InstallerVersion="500"
+    Language="1033"
+    Scope="perMachine"
+    Compressed="yes">
+
+    <SummaryInformation Description="GDATA CRM Agent" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Control Panel / Apps entry metadata -->
+    <Property Id="ARPPRODUCTICON" Value="TrayExeIcon" />
+    <Property Id="ARPHELPLINK" Value="https://gdata.com.au" />
+    <Property Id="ARPURLINFOABOUT" Value="https://gdata.com.au" />
+    <Icon Id="TrayExeIcon" SourceFile="$(var.ProjectDir)\..\..\dotnet\CrmAgent.Tray\app.ico" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="GDATA CRM Agent">
+        <Directory Id="TRAYFOLDER" Name="tray" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="PROGRAMDATADIR" Name="GDATA CRM Agent" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="GDATA CRM Agent" Level="1">
+      <ComponentGroupRef Id="ServiceFiles" />
+      <ComponentGroupRef Id="HarvestedServiceFiles" />
+      <ComponentGroupRef Id="HarvestedTrayFiles" />
+      <ComponentRef Id="ProgramDataPermissionsComponent" />
+      <ComponentRef Id="RunKeyComponent" />
+    </Feature>
+
+    <!--
+      Keep service recovery behavior aligned with setup.iss:
+      restart/10s, restart/30s, restart/60s.
+    -->
+    <CustomAction
+      Id="SetServiceRecoveryActions"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe failure gdata-agent reset= 86400 actions= restart/10000/restart/30000/restart/60000'
+      Return="ignore" />
+
+    <!--
+      Grant Interactive Users (IU) the ability to start and stop the service
+      so the tray app can control it without requiring admin elevation.
+      Standard SDDL with RP (start) and WP (stop) added to the IU ACE.
+    -->
+    <CustomAction
+      Id="SetServicePermissions"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe sdset gdata-agent D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)'
+      Return="ignore" />
+
+    <!--
+      Match existing behavior: allow logged-in users to update ProgramData config.
+      S-1-5-32-545 is the well-known SID for the built-in Users group.
+    -->
+    <CustomAction
+      Id="GrantProgramDataPermissions"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]icacls.exe "[CommonAppDataFolder]GDATA CRM Agent" /grant *S-1-5-32-545:(OI)(CI)M /T /Q'
+      Return="ignore" />
+
+    <!-- Close tray app on uninstall so files can be removed. -->
+    <CustomAction
+      Id="KillTrayOnUninstall"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
+      Return="ignore" />
+
+    <!--
+      Force-remove ProgramData\GDATA CRM Agent on uninstall (contains runtime
+      config/credentials). RemoveFolder only deletes empty dirs, so we use
+      rmdir /s /q to match the Inno Setup's DelTree behavior.
+    -->
+    <CustomAction
+      Id="CleanProgramDataDir"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[CommonAppDataFolder]GDATA CRM Agent"'
+      Return="ignore" />
+
+    <!-- Kill tray app during upgrades so files can be replaced. -->
+    <CustomAction
+      Id="KillTrayOnUpgrade"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]taskkill.exe /F /IM CrmAgentTray.exe'
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetServiceRecoveryActions" After="InstallServices" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="GrantProgramDataPermissions" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="KillTrayOnUpgrade" Before="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="KillTrayOnUninstall" Before="StopServices" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="CleanProgramDataDir" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ServiceFiles" Directory="INSTALLFOLDER">
+      <Component Id="ServiceExeComponent" Guid="*">
+        <File Id="ServiceExeFile" Source="$(var.PublishDir)\CrmAgent.exe" KeyPath="yes" />
+        <ServiceInstall
+          Id="InstallWindowsService"
+          Name="gdata-agent"
+          DisplayName="GDATA CRM Agent"
+          Description="Polls the council portal for extraction jobs and writes results to Azure Blob Storage."
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Vital="yes" />
+        <ServiceControl
+          Id="ControlWindowsService"
+          Name="gdata-agent"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+
+      <!-- Included explicitly to match single-file publish output. -->
+      <Component Id="ServiceAppSettingsComponent" Guid="*">
+        <File Id="ServiceAppSettingsFile" Source="$(var.PublishDir)\appsettings.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ServiceDevSettingsComponent" Guid="*">
+        <File Id="ServiceDevSettingsFile" Source="$(var.PublishDir)\appsettings.Development.json" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="ProgramDataPermissionsComponent" Directory="PROGRAMDATADIR" Guid="*">
+      <CreateFolder />
+      <RegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\GDATA-AU\GDATA CRM Agent"
+        Name="ProgramDataInitialized"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+
+    <Component Id="RunKeyComponent" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        Name="GDATACrmAgent"
+        Type="string"
+        Value="&quot;[TRAYFOLDER]CrmAgentTray.exe&quot;"
+        KeyPath="yes" />
+      <!-- Remove legacy Run entry left by older installers to prevent duplicate tray auto-starts -->
+      <RemoveRegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        Name="LGACrmAgent" />
+    </Component>
+  </Fragment>
+</Wix>

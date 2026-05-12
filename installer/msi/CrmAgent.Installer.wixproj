@@ -1,0 +1,39 @@
+<Project Sdk="WixToolset.Sdk/4.0.5">
+  <PropertyGroup>
+    <OutputName>gdata-crm-agent-installer</OutputName>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+
+    <!-- Paths are relative to this project file. -->
+    <PublishDir>..\..\publish</PublishDir>
+    <TrayPublishDir>..\..\publish-tray</TrayPublishDir>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">1.0.0</PackageVersion>
+    <DefineConstants>PublishDir=$(PublishDir);TrayPublishDir=$(TrayPublishDir);PackageVersion=$(PackageVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Heat" Version="4.0.5" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="4.0.5" />
+  </ItemGroup>
+
+  <!--
+    Harvest remaining files (satellite assemblies, .deps.json, .runtimeconfig.json)
+    that aren't declared explicitly in Product.wxs.
+  -->
+  <ItemGroup>
+    <HarvestDirectory Include="$(PublishDir)">
+      <ComponentGroupName>HarvestedServiceFiles</ComponentGroupName>
+      <DirectoryRefId>INSTALLFOLDER</DirectoryRefId>
+      <PreprocessorVariable>var.PublishDir</PreprocessorVariable>
+      <SuppressRootDirectory>true</SuppressRootDirectory>
+      <Transforms>ExcludeServiceFiles.xslt</Transforms>
+    </HarvestDirectory>
+
+    <HarvestDirectory Include="$(TrayPublishDir)">
+      <ComponentGroupName>HarvestedTrayFiles</ComponentGroupName>
+      <DirectoryRefId>TRAYFOLDER</DirectoryRefId>
+      <PreprocessorVariable>var.TrayPublishDir</PreprocessorVariable>
+      <SuppressRootDirectory>true</SuppressRootDirectory>
+    </HarvestDirectory>
+  </ItemGroup>
+</Project>

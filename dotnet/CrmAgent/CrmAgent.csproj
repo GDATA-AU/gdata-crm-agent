@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <Product>GDATA CRM Agent</Product>
+    <Company>GDATA Australia</Company>
+    <Description>GDATA CRM Agent — extraction service for the GDATA Customer Portal</Description>
+    <Copyright>© 2026 GDATA Australia</Copyright>
+    <UserSecretsId>dotnet-CrmAgent-8dc76f96-7a7e-4a7f-a477-1d15019fbd05</UserSecretsId>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CrmAgent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+</Project>
+
