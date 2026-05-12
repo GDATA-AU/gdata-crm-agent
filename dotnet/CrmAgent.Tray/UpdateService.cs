@@ -14,7 +14,7 @@ namespace CrmAgent.Tray;
 public sealed class UpdateService : IDisposable
 {
     private const string GitHubOwner = "GDATA-AU";
-    private const string GitHubRepo = "crm-agent";
+    private const string GitHubRepo = "gdata-crm-agent";
     private const string ReleaseUrl = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const int CheckDelayMs = 30_000;         // first check 30s after startup
     private const int CheckIntervalMs = 4 * 60 * 60 * 1000; // then every 4 hours

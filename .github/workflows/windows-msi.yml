@@ -1,0 +1,106 @@
+name: Build Windows MSI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dotnet/**'
+      - 'installer/**'
+      - '.github/workflows/windows-msi.yml'
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-msi:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore crm-agent.sln
+
+      - name: Build solution
+        run: dotnet build crm-agent.sln -c Release --no-restore
+
+      - name: Run tests
+        run: dotnet test dotnet/CrmAgent.Tests/CrmAgent.Tests.csproj -c Release --no-build --verbosity normal
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            # Tag trigger: strip leading 'v' from tag name (e.g. v1.0.42 → 1.0.42)
+            $ver = "${{ github.ref_name }}" -replace '^v',''
+          } else {
+            # Branch trigger: 1.0.<run_number>
+            $ver = "1.0.${{ github.run_number }}"
+          }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Package version: $ver"
+
+      - name: Publish service binaries
+        run: dotnet publish dotnet/CrmAgent/CrmAgent.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.version.outputs.version }} -o publish
+
+      - name: Publish tray binaries
+        run: dotnet publish dotnet/CrmAgent.Tray/CrmAgent.Tray.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.version.outputs.version }} -o publish-tray
+
+      - name: Build MSI
+        run: dotnet build installer/msi/CrmAgent.Installer.wixproj -c Release -p:PackageVersion=${{ steps.version.outputs.version }}
+
+      - name: Locate MSI output
+        id: find_msi
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path installer/msi/bin/Release -Filter *.msi -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $msi) {
+            Write-Error "No MSI produced under installer/msi/bin/Release"
+            exit 1
+          }
+          "msi_path=$($msi.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "msi_dir=$($msi.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "MSI located at: $($msi.FullName)"
+          "MSI size bytes: $((Get-Item $msi.FullName).Length)"
+          Get-ChildItem -Path installer/msi/bin/Release -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Stage installer output bundle
+        shell: pwsh
+        run: |
+          Remove-Item -Path installer/msi-artifact -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -Path installer/msi-artifact -ItemType Directory | Out-Null
+          Copy-Item -Path "${{ steps.find_msi.outputs.msi_path }}" -Destination installer/msi-artifact -Force
+          Get-ChildItem -Path installer/msi-artifact -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Upload MSI artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdata-crm-agent-msi
+          path: installer/msi-artifact/**
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $msi = Get-ChildItem -Path installer/msi-artifact -Filter *.msi | Select-Object -First 1
+          gh release create $tag $msi.FullName `
+            --title "GDATA CRM Agent $tag" `
+            --generate-notes
