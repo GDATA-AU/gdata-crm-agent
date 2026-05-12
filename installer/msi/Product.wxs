@@ -260,7 +260,7 @@
         Icon="TrayExeIcon" />
       <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
       <RegistryValue
-        Root="HKLM"
+        Root="HKCU"
         Key="SOFTWARE\GDATA-AU\GDATA CRM Agent"
         Name="StartMenuShortcut"
         Type="integer"
