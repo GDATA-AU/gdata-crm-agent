@@ -26,8 +26,14 @@ public sealed class UpdateService : IDisposable
     /// <summary>Fired on the UI thread when a new MSI has been downloaded and is ready to install.</summary>
     public event Action<string, string>? UpdateReady;
 
-    /// <summary>Fired just before the update watchdog script launches. Subscribers should close UI.</summary>
+    /// <summary>Fired on the UI thread during MSI download with (bytesReceived, totalBytes). totalBytes is -1 if unknown.</summary>
+    public event Action<long, long>? DownloadProgress;
+
+    /// <summary>Fired after the update watchdog script has been launched successfully. Subscribers should close UI.</summary>
     public event Action? ApplyingUpdate;
+
+    /// <summary>Fired on the UI thread when an MSI download fails mid-stream. Subscribers should reset download UI.</summary>
+    public event Action? DownloadFailed;
 
     /// <summary>The latest version available on GitHub, or null if not yet checked / up-to-date.</summary>
     public string? AvailableVersion { get; private set; }
@@ -86,13 +92,10 @@ public sealed class UpdateService : IDisposable
             """;
         File.WriteAllText(scriptPath, scriptContent);
 
-        // Notify subscribers to close UI (e.g. StatusForm)
-        ApplyingUpdate?.Invoke();
-
         // Show "Installing update…" balloon
         notifyIcon.BalloonTipTitle = "Installing Update";
         notifyIcon.BalloonTipText = $"Updating to GDATA CRM Agent {version}…";
-        notifyIcon.ShowBalloonTip(3_000);
+        notifyIcon.ShowBalloonTip(5_000);
 
         // Brief pause so the toast is visible before UAC prompt
         Task.Delay(500).ContinueWith(_ =>
@@ -107,10 +110,16 @@ public sealed class UpdateService : IDisposable
                     UseShellExecute = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
                 });
+
+                // Process launched successfully — now close the UI
+                ApplyingUpdate?.Invoke();
             }
             catch (System.ComponentModel.Win32Exception)
             {
-                // User declined UAC prompt — nothing to do.
+                // User declined UAC prompt — let them know
+                notifyIcon.BalloonTipTitle = "Update Cancelled";
+                notifyIcon.BalloonTipText = "The update was cancelled. You can try again from the status window.";
+                notifyIcon.ShowBalloonTip(5_000);
             }
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
@@ -142,10 +151,32 @@ public sealed class UpdateService : IDisposable
             var tempPath = Path.Combine(Path.GetTempPath(), $"GDATACrmAgent-{release.TagName}.msi");
             if (!File.Exists(tempPath))
             {
-                using var response = await _http.GetAsync(msiAsset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
-                await using var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                await response.Content.CopyToAsync(fs);
+                var partPath = tempPath + ".part";
+                try
+                {
+                    using var response = await _http.GetAsync(msiAsset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                    response.EnsureSuccessStatusCode();
+                    var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                    await using var fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    using var contentStream = await response.Content.ReadAsStreamAsync();
+                    var buffer = new byte[81920];
+                    long bytesReceived = 0;
+                    int bytesRead;
+                    while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                    {
+                        await fs.WriteAsync(buffer.AsMemory(0, bytesRead));
+                        bytesReceived += bytesRead;
+                        DownloadProgress?.Invoke(bytesReceived, totalBytes);
+                    }
+                }
+                catch
+                {
+                    try { File.Delete(partPath); } catch { /* best effort cleanup */ }
+                    DownloadFailed?.Invoke();
+                    return;
+                }
+
+                File.Move(partPath, tempPath);
             }
 
             AvailableVersion = release.TagName;
