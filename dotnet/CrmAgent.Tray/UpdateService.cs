@@ -70,6 +70,16 @@ public sealed class UpdateService : IDisposable
         if (DownloadedMsiPath is null || !File.Exists(DownloadedMsiPath))
             return;
 
+        if (IsRebootPending())
+        {
+            MessageBox.Show(
+                "A system reboot is required before the update can be installed.\n\nPlease restart your computer and try again.",
+                "Reboot Required",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
         var trayExePath = Environment.ProcessPath;
         if (trayExePath is null) return;
 
@@ -204,6 +214,41 @@ public sealed class UpdateService : IDisposable
     {
         var cleaned = tag.TrimStart('v', 'V');
         return Version.TryParse(cleaned, out var v) ? v : null;
+    }
+
+    /// <summary>
+    /// Checks the same registry keys that MSI's MsiSystemRebootPending
+    /// property uses, so the tray can warn the user before attempting a
+    /// silent install that would fail with no visible feedback.
+    /// </summary>
+    private static bool IsRebootPending()
+    {
+        try
+        {
+            using var cbsKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending");
+            if (cbsKey is not null) return true;
+        }
+        catch { /* access denied — assume not pending */ }
+
+        try
+        {
+            using var wuKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired");
+            if (wuKey is not null) return true;
+        }
+        catch { /* access denied — assume not pending */ }
+
+        try
+        {
+            using var smKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Control\Session Manager");
+            if (smKey?.GetValue("PendingFileRenameOperations") is string[] ops && ops.Length > 0)
+                return true;
+        }
+        catch { /* access denied — assume not pending */ }
+
+        return false;
     }
 
     internal static Version CurrentVersion =>
