@@ -129,9 +129,11 @@
       Return="ignore" />
 
     <!--
-      Stop and remove any pre-existing service before (re-)creating it.
-      Handles migration from earlier installs and avoids
-      ERROR_SERVICE_MARKED_DELETE (1072) during MSI major upgrades.
+      Stop and remove any pre-existing service on fresh installs only.
+      Handles migration from earlier manual installs (Setup.bat / sc create)
+      and avoids ERROR_SERVICE_MARKED_DELETE (1072).
+      During upgrades we use sc config instead, which preserves the
+      configured "Log On As" account.
     -->
     <CustomAction
       Id="StopExistingService"
@@ -149,6 +151,15 @@
       ExeCommand='[SystemFolder]sc.exe delete gdata-agent'
       Return="ignore" />
 
+    <!-- Stop service during upgrades so files can be replaced. -->
+    <CustomAction
+      Id="StopServiceOnUpgrade"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe stop gdata-agent'
+      Return="ignore" />
+
     <!--
       Register the Windows service via sc.exe instead of the native MSI
       ServiceInstall table.  Single-file .NET executables have a non-standard
@@ -156,6 +167,7 @@
       Error 1923 on certain Windows Server editions.  sc.exe create only
       records the binary path without validating the executable, matching
       a proven approach that avoids PE-header validation issues.
+      Used on fresh installs only.
     -->
     <CustomAction
       Id="CreateService"
@@ -165,12 +177,35 @@
       ExeCommand='[SystemFolder]sc.exe create gdata-agent binPath= "\"[INSTALLFOLDER]CrmAgent.exe\"" start= auto DisplayName= "GDATA CRM Agent"'
       Return="check" />
 
+    <!--
+      Update the existing service in-place during upgrades.  Unlike
+      delete+create, sc config preserves the configured "Log On As"
+      account and password so admins don't need to reconfigure them
+      after every update.
+    -->
+    <CustomAction
+      Id="ConfigService"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe config gdata-agent binPath= "\"[INSTALLFOLDER]CrmAgent.exe\"" start= auto'
+      Return="check" />
+
     <CustomAction
       Id="SetServiceDescription"
       Directory="SystemFolder"
       Execute="deferred"
       Impersonate="no"
       ExeCommand='[SystemFolder]sc.exe description gdata-agent "Polls the council portal for extraction jobs and writes results to Azure Blob Storage."'
+      Return="ignore" />
+
+    <!-- Start the service after install or upgrade so it resumes immediately. -->
+    <CustomAction
+      Id="StartService"
+      Directory="SystemFolder"
+      Execute="deferred"
+      Impersonate="no"
+      ExeCommand='[SystemFolder]sc.exe start gdata-agent'
       Return="ignore" />
 
     <!--
@@ -202,15 +237,21 @@
       Return="ignore" />
 
     <InstallExecuteSequence>
-      <Custom Action="CreateService" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="SetServiceDescription" After="CreateService" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <!-- Fresh install: delete any pre-existing service (from manual sc create), then create fresh -->
+      <Custom Action="CreateService" After="InstallFiles" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <!-- Upgrade: update service in-place, preserving the "Log On As" account -->
+      <Custom Action="ConfigService" After="InstallFiles" Condition="WIX_UPGRADE_DETECTED" />
+      <Custom Action="SetServiceDescription" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServiceRecoveryActions" After="SetServiceDescription" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="SetServicePermissions" After="SetServiceRecoveryActions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="GrantProgramDataPermissions" After="SetServicePermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="StartService" After="GrantProgramDataPermissions" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="KillLegacyTrayOnUpgrade" Before="KillTrayOnUpgrade" Condition="WIX_UPGRADE_DETECTED" />
-      <Custom Action="KillTrayOnUpgrade" Before="StopExistingService" Condition="WIX_UPGRADE_DETECTED" />
-      <Custom Action="StopExistingService" Before="DeleteExistingService" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
-      <Custom Action="DeleteExistingService" Before="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
+      <Custom Action="KillTrayOnUpgrade" Before="StopServiceOnUpgrade" Condition="WIX_UPGRADE_DETECTED" />
+      <Custom Action="StopExistingService" Before="DeleteExistingService" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <Custom Action="DeleteExistingService" Before="InstallFiles" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
+      <!-- Upgrade: stop service before files are replaced, but do NOT delete it -->
+      <Custom Action="StopServiceOnUpgrade" Before="InstallFiles" Condition="WIX_UPGRADE_DETECTED" />
       <Custom Action="KillTrayOnUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="StopServiceOnUninstall" After="KillTrayOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="DeleteServiceOnUninstall" After="StopServiceOnUninstall" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
