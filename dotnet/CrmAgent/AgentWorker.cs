@@ -32,6 +32,8 @@ public sealed class AgentWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Agent poll loop started (interval={PollIntervalMs}ms)", _config.PollIntervalMs);
+        const int maxConsecutiveCrashes = 5;
+        var consecutiveCrashes = 0;
 
         // Safety net: if the inner loop ever exits unexpectedly (without the
         // stoppingToken being cancelled), restart it automatically.  This
@@ -42,10 +44,29 @@ public sealed class AgentWorker : BackgroundService
             try
             {
                 await RunPollLoopAsync(stoppingToken);
+                consecutiveCrashes = 0;
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Poll loop crashed unexpectedly — restarting in 10s");
+                if (IsFatalException(ex))
+                {
+                    _logger.LogCritical(ex, "Poll loop hit a fatal exception — allowing process to terminate for service restart");
+                    throw;
+                }
+
+                consecutiveCrashes++;
+                if (consecutiveCrashes >= maxConsecutiveCrashes)
+                {
+                    _logger.LogCritical(ex,
+                        "Poll loop crashed {CrashCount} times consecutively — allowing process to terminate for service restart",
+                        consecutiveCrashes);
+                    throw;
+                }
+
+                _logger.LogError(ex,
+                    "Poll loop crashed unexpectedly ({CrashCount}/{MaxCrashes}) — restarting in 10s",
+                    consecutiveCrashes,
+                    maxConsecutiveCrashes);
                 await WaitAsync(TimeSpan.FromSeconds(10), stoppingToken);
             }
         }
@@ -369,4 +390,12 @@ public sealed class AgentWorker : BackgroundService
         try { await heartbeatTask; }
         catch (OperationCanceledException) { }
     }
+
+    private static bool IsFatalException(Exception ex)
+        => ex is OutOfMemoryException
+            or AccessViolationException
+            or AppDomainUnloadedException
+            or BadImageFormatException
+            or CannotUnloadAppDomainException
+            or InvalidProgramException;
 }
