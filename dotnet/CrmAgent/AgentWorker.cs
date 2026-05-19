@@ -33,6 +33,28 @@ public sealed class AgentWorker : BackgroundService
     {
         _logger.LogInformation("Agent poll loop started (interval={PollIntervalMs}ms)", _config.PollIntervalMs);
 
+        // Safety net: if the inner loop ever exits unexpectedly (without the
+        // stoppingToken being cancelled), restart it automatically.  This
+        // guards against future bugs that could leave the agent in a zombie
+        // state (process alive but not polling).
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunPollLoopAsync(stoppingToken);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "Poll loop crashed unexpectedly — restarting in 10s");
+                await WaitAsync(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+        }
+
+        _logger.LogInformation("Agent poll loop stopped");
+    }
+
+    private async Task RunPollLoopAsync(CancellationToken stoppingToken)
+    {
         var baseInterval = TimeSpan.FromMilliseconds(_config.PollIntervalMs);
 
         // Auth failures (401/403): 5 attempts at base interval, then 1m → 10m → 30m → 1h cap
@@ -63,7 +85,7 @@ public sealed class AgentWorker : BackgroundService
             {
                 pollResult = await _portal.PollForJobAsync(stoppingToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
@@ -196,7 +218,7 @@ public sealed class AgentWorker : BackgroundService
 
                     _logger.LogInformation("Preview job completed: {JobId} rows={Rows}", job.Id, result.ProcessedRows);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     _logger.LogInformation("Preview job {JobId} cancelled due to shutdown", job.Id);
                     break;
@@ -254,7 +276,7 @@ public sealed class AgentWorker : BackgroundService
                 _logger.LogInformation("Job completed: {JobId} rows={Rows} blob={BlobName}",
                     job.Id, result.ProcessedRows, result.BlobName);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 await heartbeatCts.CancelAsync();
                 await AwaitHeartbeat(heartbeatTask);
@@ -279,7 +301,6 @@ public sealed class AgentWorker : BackgroundService
             await WaitAsync(baseInterval, stoppingToken);
         }
 
-        _logger.LogInformation("Agent poll loop stopped");
     }
 
     /// <summary>

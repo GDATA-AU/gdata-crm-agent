@@ -91,6 +91,7 @@ try
         {
             http.BaseAddress = new Uri(agentConfig.PortalUrl);
             http.DefaultRequestHeaders.Add("Authorization", $"Bearer {agentConfig.AgentApiKey}");
+            http.Timeout = TimeSpan.FromSeconds(30);
         });
 
         // Generic HTTP client factory for REST API handler (outbound API calls).
