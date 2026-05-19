@@ -101,7 +101,7 @@ public sealed class PortalClient
                     (int)response.StatusCode, jobId, body);
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _logger.LogWarning(ex, "Failed to report job status for {JobId}", jobId);
         }

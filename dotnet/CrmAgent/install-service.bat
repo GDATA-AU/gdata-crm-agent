@@ -43,6 +43,7 @@ sc create %SERVICE_NAME% ^
 
 sc description %SERVICE_NAME% "%DESCRIPTION%"
 sc failure %SERVICE_NAME% reset= 86400 actions= restart/10000/restart/30000/restart/60000
+sc failureflag %SERVICE_NAME% 1
 
 echo Starting %SERVICE_NAME%...
 sc start %SERVICE_NAME%
