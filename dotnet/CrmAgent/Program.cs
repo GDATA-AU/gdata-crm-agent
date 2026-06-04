@@ -1,3 +1,4 @@
+using Azure.Storage.Blobs;
 using CrmAgent;
 using CrmAgent.Handlers;
 using CrmAgent.Services;
@@ -62,6 +63,19 @@ try
     var hasRequiredConfig = !string.IsNullOrWhiteSpace(portalUrl)
         && !string.IsNullOrWhiteSpace(apiKey)
         && !string.IsNullOrWhiteSpace(storageConnectionString);
+
+    // Validate the Azure Storage connection string format before registering services.
+    // BlobServiceClient parses the connection string in its constructor, so this detects
+    // malformed values (e.g. missing '=' in a segment) at startup rather than on the first job.
+    if (hasRequiredConfig)
+    {
+        try { _ = new BlobServiceClient(storageConnectionString); }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or ArgumentException)
+        {
+            Log.Fatal(ex, "Azure Storage connection string is invalid — check Agent:AzureStorageConnectionString in appsettings.json and restart the service");
+            hasRequiredConfig = false;
+        }
+    }
 
     if (hasRequiredConfig)
     {

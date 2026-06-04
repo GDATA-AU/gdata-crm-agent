@@ -10,12 +10,15 @@ public sealed class BlobStorageService
 {
     private const string ContainerName = "erp-imports";
 
-    private readonly BlobContainerClient _container;
+    private readonly Lazy<BlobContainerClient> _container;
 
     public BlobStorageService(AgentConfig config)
     {
-        var serviceClient = new BlobServiceClient(config.AzureStorageConnectionString);
-        _container = serviceClient.GetBlobContainerClient(ContainerName);
+        _container = new Lazy<BlobContainerClient>(() =>
+        {
+            var serviceClient = new BlobServiceClient(config.AzureStorageConnectionString);
+            return serviceClient.GetBlobContainerClient(ContainerName);
+        });
     }
 
     /// <summary>
@@ -23,7 +26,7 @@ public sealed class BlobStorageService
     /// </summary>
     public async Task UploadStreamAsync(string blobName, Stream stream, CancellationToken ct = default)
     {
-        var blobClient = _container.GetBlobClient(blobName);
+        var blobClient = _container.Value.GetBlobClient(blobName);
         await blobClient.UploadAsync(stream, new BlobUploadOptions
         {
             HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
@@ -37,7 +40,7 @@ public sealed class BlobStorageService
     /// </summary>
     public async Task<Stream> OpenWriteStreamAsync(string blobName, CancellationToken ct = default)
     {
-        var blobClient = _container.GetBlobClient(blobName);
+        var blobClient = _container.Value.GetBlobClient(blobName);
         return await blobClient.OpenWriteAsync(overwrite: true, new BlobOpenWriteOptions
         {
             HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
@@ -50,7 +53,7 @@ public sealed class BlobStorageService
     /// </summary>
     public async Task DeleteBlobIfExistsAsync(string blobName, CancellationToken ct = default)
     {
-        var blobClient = _container.GetBlobClient(blobName);
+        var blobClient = _container.Value.GetBlobClient(blobName);
         await blobClient.DeleteIfExistsAsync(cancellationToken: ct);
     }
 
