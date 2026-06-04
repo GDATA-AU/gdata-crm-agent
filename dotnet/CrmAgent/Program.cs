@@ -72,7 +72,7 @@ try
         try { _ = new BlobServiceClient(storageConnectionString); }
         catch (Exception ex) when (ex is FormatException or InvalidOperationException or ArgumentException)
         {
-            Log.Fatal(ex, "Azure Storage connection string is invalid — check Agent:AzureStorageConnectionString in appsettings.json and restart the service");
+            Log.Error(ex, "Azure Storage connection string is invalid — check Agent:AzureStorageConnectionString in appsettings.json and restart the service");
             hasRequiredConfig = false;
         }
     }
