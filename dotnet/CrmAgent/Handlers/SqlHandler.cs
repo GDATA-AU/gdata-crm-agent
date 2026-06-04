@@ -31,7 +31,7 @@ public sealed class SqlHandler : IJobHandler
         var connectionString = BuildMssqlConnectionString(config, _agentConfig.SqlTrustServerCertificate);
 
         // Guard: reject queries that aren't SELECT statements.
-        var firstToken = config.Query.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
+        var firstToken = config.Query.TrimStart().Split([' ', '\t', '\r', '\n'], 2, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
         if (!AllowedFirstTokens.Contains(firstToken))
         {
             throw new InvalidOperationException(
