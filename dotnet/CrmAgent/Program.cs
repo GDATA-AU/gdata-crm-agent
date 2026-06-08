@@ -105,7 +105,7 @@ try
         {
             http.BaseAddress = new Uri(agentConfig.PortalUrl);
             http.DefaultRequestHeaders.Add("Authorization", $"Bearer {agentConfig.AgentApiKey}");
-            http.DefaultRequestHeaders.Add("X-Agent-Machine-Name", Environment.MachineName);
+            http.DefaultRequestHeaders.Add("X-Agent-Machine-Name", Environment.MachineName.Replace("\r", "").Replace("\n", ""));
             http.Timeout = TimeSpan.FromSeconds(30);
         });
 
