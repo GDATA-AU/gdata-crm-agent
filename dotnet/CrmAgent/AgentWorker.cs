@@ -262,9 +262,11 @@ public sealed class AgentWorker : BackgroundService
                     _logger.LogInformation("Preview job {JobId} cancelled due to shutdown", job.Id);
                     break;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (previewCts.IsCancellationRequested)
                 {
                     // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
+                    // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. an
+                    // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
                     _logger.LogError("Preview job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
                         job.Id, _config.MaxJobDurationSeconds);
 
@@ -343,9 +345,11 @@ public sealed class AgentWorker : BackgroundService
                 _logger.LogInformation("Job {JobId} cancelled due to shutdown", job.Id);
                 break;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
             {
                 // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
+                // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. a REST
+                // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
                 await heartbeatCts.CancelAsync();
                 await AwaitHeartbeat(heartbeatTask);
 
