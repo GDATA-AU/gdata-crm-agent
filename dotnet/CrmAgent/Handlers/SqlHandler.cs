@@ -28,7 +28,8 @@ public sealed class SqlHandler : IJobHandler
     public async Task<HandlerResult> ExecuteAsync(Job job, Action<JobProgress> onProgress, CancellationToken ct)
     {
         var config = job.Config.ToSqlConfig(job);
-        var connectionString = BuildMssqlConnectionString(config, _agentConfig.SqlTrustServerCertificate);
+        var connectionString = BuildMssqlConnectionString(
+            config, _agentConfig.SqlTrustServerCertificate, _agentConfig.SqlConnectTimeoutSeconds);
 
         // Guard: reject queries that aren't SELECT statements.
         var firstToken = config.Query.TrimStart().Split([' ', '\t', '\r', '\n'], 2, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
@@ -85,7 +86,8 @@ public sealed class SqlHandler : IJobHandler
     /// provided by the portal, using Windows Integrated Security (the service account).
     /// SQL authentication credentials are never accepted.
     /// </summary>
-    private static string BuildMssqlConnectionString(SqlJobConfig config, bool trustServerCertificate)
+    private static string BuildMssqlConnectionString(
+        SqlJobConfig config, bool trustServerCertificate, int connectTimeoutSeconds)
     {
         if (string.IsNullOrEmpty(config.Server))
             throw new InvalidOperationException("MSSQL job config missing 'server'");
@@ -98,11 +100,14 @@ public sealed class SqlHandler : IJobHandler
             InitialCatalog = config.Database,
             IntegratedSecurity = true,
             TrustServerCertificate = trustServerCertificate,
+            // Bound the time spent waiting to establish a connection to an unreachable or
+            // overloaded server, rather than relying on OS-level TCP timeouts.
+            ConnectTimeout = connectTimeoutSeconds,
         };
         return builder.ConnectionString;
     }
 
-    private static async Task<int> ExecuteMssqlAsync(
+    private async Task<int> ExecuteMssqlAsync(
         string connectionString, string query, string[] hashFields,
         NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
     {
@@ -110,7 +115,7 @@ public sealed class SqlHandler : IJobHandler
         await connection.OpenAsync(ct);
 
         await using var command = new SqlCommand(query, connection);
-        command.CommandTimeout = 0; // No timeout — rely on CancellationToken for cancellation
+        command.CommandTimeout = _agentConfig.SqlCommandTimeoutSeconds;
         await using var reader = await command.ExecuteReaderAsync(ct);
 
         return await StreamReaderAsync(reader, hashFields, writer, onProgress, ct);
@@ -208,14 +213,14 @@ public sealed class SqlHandler : IJobHandler
         return $"SELECT TOP {PreviewRowLimit} * FROM ({trimmed}) AS _p";
     }
 
-    private static async Task<List<Dictionary<string, object?>>> ExecutePreviewAsync(
+    private async Task<List<Dictionary<string, object?>>> ExecutePreviewAsync(
         string connectionString, string query, CancellationToken ct)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(ct);
 
         await using var command = new SqlCommand(query, connection);
-        command.CommandTimeout = 0; // No timeout — rely on CancellationToken for cancellation
+        command.CommandTimeout = _agentConfig.SqlCommandTimeoutSeconds;
         await using var reader = await command.ExecuteReaderAsync(ct);
 
         var rows = new List<Dictionary<string, object?>>();

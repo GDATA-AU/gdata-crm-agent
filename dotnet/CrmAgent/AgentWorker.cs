@@ -15,18 +15,34 @@ public sealed class AgentWorker : BackgroundService
     private readonly AgentConfig _config;
     private readonly PortalClient _portal;
     private readonly HandlerFactory _handlers;
+    private readonly AgentLiveness _liveness;
     private readonly ILogger<AgentWorker> _logger;
 
     public AgentWorker(
         AgentConfig config,
         PortalClient portal,
         HandlerFactory handlers,
+        AgentLiveness liveness,
         ILogger<AgentWorker> logger)
     {
         _config = config;
         _portal = portal;
         _handlers = handlers;
+        _liveness = liveness;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Creates a cancellation token source linked to <paramref name="stoppingToken"/> that also
+    /// trips after <see cref="AgentConfig.MaxJobDurationSeconds"/> so no single job can run
+    /// indefinitely. When the deadline is disabled (0) the source simply mirrors the host token.
+    /// </summary>
+    private CancellationTokenSource CreateJobCts(CancellationToken stoppingToken)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        if (_config.MaxJobDurationSeconds > 0)
+            cts.CancelAfter(TimeSpan.FromSeconds(_config.MaxJobDurationSeconds));
+        return cts;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -222,10 +238,12 @@ public sealed class AgentWorker : BackgroundService
             if (job.Preview)
             {
                 // Preview mode: no heartbeat, return rows inline.
+                using var previewCts = CreateJobCts(stoppingToken);
+                _liveness.BeginJob(job.Id);
                 try
                 {
                     var handler = _handlers.GetHandler(job);
-                    var result = await handler.ExecuteAsync(job, _ => { }, stoppingToken);
+                    var result = await handler.ExecuteAsync(job, _ => { }, previewCts.Token);
 
                     await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
                     {
@@ -244,6 +262,20 @@ public sealed class AgentWorker : BackgroundService
                     _logger.LogInformation("Preview job {JobId} cancelled due to shutdown", job.Id);
                     break;
                 }
+                catch (OperationCanceledException) when (previewCts.IsCancellationRequested)
+                {
+                    // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
+                    // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. an
+                    // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
+                    _logger.LogError("Preview job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
+                        job.Id, _config.MaxJobDurationSeconds);
+
+                    await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
+                    {
+                        Status = JobStatus.Failed,
+                        Error = $"Job exceeded the maximum duration of {_config.MaxJobDurationSeconds}s and was cancelled.",
+                    }, CancellationToken.None);
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Preview job failed: {JobId}", job.Id);
@@ -253,6 +285,10 @@ public sealed class AgentWorker : BackgroundService
                         Status = JobStatus.Failed,
                         Error = SanitizeErrorMessage(ex),
                     }, CancellationToken.None);
+                }
+                finally
+                {
+                    _liveness.EndJob();
                 }
 
                 await WaitAsync(baseInterval, stoppingToken);
@@ -267,6 +303,11 @@ public sealed class AgentWorker : BackgroundService
             using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             var heartbeatTask = RunHeartbeatAsync(job.Id, () => { lock (progressLock) { return lastProgress; } }, heartbeatCts.Token);
 
+            // Per-job deadline: bounds the total wall-clock time of the handler so a slow or
+            // wedged extraction cannot hang the poll loop indefinitely.
+            using var jobCts = CreateJobCts(stoppingToken);
+            _liveness.BeginJob(job.Id);
+
             // ---------------------------------------------------------------
             // Execute the handler
             // ---------------------------------------------------------------
@@ -277,7 +318,7 @@ public sealed class AgentWorker : BackgroundService
                 var result = await handler.ExecuteAsync(job, progress =>
                 {
                     lock (progressLock) { lastProgress = progress; }
-                }, stoppingToken);
+                }, jobCts.Token);
 
                 // Stop heartbeat
                 await heartbeatCts.CancelAsync();
@@ -304,6 +345,23 @@ public sealed class AgentWorker : BackgroundService
                 _logger.LogInformation("Job {JobId} cancelled due to shutdown", job.Id);
                 break;
             }
+            catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
+            {
+                // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
+                // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. a REST
+                // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
+                await heartbeatCts.CancelAsync();
+                await AwaitHeartbeat(heartbeatTask);
+
+                _logger.LogError("Job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
+                    job.Id, _config.MaxJobDurationSeconds);
+
+                await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
+                {
+                    Status = JobStatus.Failed,
+                    Error = $"Job exceeded the maximum duration of {_config.MaxJobDurationSeconds}s and was cancelled.",
+                }, CancellationToken.None);
+            }
             catch (Exception ex)
             {
                 await heartbeatCts.CancelAsync();
@@ -316,6 +374,10 @@ public sealed class AgentWorker : BackgroundService
                     Status = JobStatus.Failed,
                     Error = SanitizeErrorMessage(ex),
                 }, CancellationToken.None);
+            }
+            finally
+            {
+                _liveness.EndJob();
             }
 
             // Sleep before next poll

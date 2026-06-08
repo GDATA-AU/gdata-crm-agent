@@ -96,6 +96,21 @@ try
             RestApiTimeoutSeconds = int.TryParse(
                 builder.Configuration["Agent:RestApiTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("REST_API_TIMEOUT_SECONDS"),
                 out var apiTimeout) && apiTimeout >= 1 ? apiTimeout : 300,
+            SqlCommandTimeoutSeconds = int.TryParse(
+                builder.Configuration["Agent:SqlCommandTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("SQL_COMMAND_TIMEOUT_SECONDS"),
+                out var sqlTimeout) && sqlTimeout >= 0 ? sqlTimeout : 300,
+            SqlConnectTimeoutSeconds = int.TryParse(
+                builder.Configuration["Agent:SqlConnectTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("SQL_CONNECT_TIMEOUT_SECONDS"),
+                out var sqlConnTimeout) && sqlConnTimeout >= 1 ? sqlConnTimeout : 15,
+            MaxJobDurationSeconds = int.TryParse(
+                builder.Configuration["Agent:MaxJobDurationSeconds"] ?? Environment.GetEnvironmentVariable("MAX_JOB_DURATION_SECONDS"),
+                out var maxJobDur) && maxJobDur >= 0 ? maxJobDur : 1800,
+            WatchdogGraceSeconds = int.TryParse(
+                builder.Configuration["Agent:WatchdogGraceSeconds"] ?? Environment.GetEnvironmentVariable("WATCHDOG_GRACE_SECONDS"),
+                out var watchdogGrace) && watchdogGrace >= 0 ? watchdogGrace : 300,
+            MaxRestApiPages = int.TryParse(
+                builder.Configuration["Agent:MaxRestApiPages"] ?? Environment.GetEnvironmentVariable("MAX_REST_API_PAGES"),
+                out var maxPages) && maxPages >= 1 ? maxPages : 100_000,
         };
 
         builder.Services.AddSingleton(agentConfig);
@@ -113,13 +128,16 @@ try
         builder.Services.AddHttpClient();
 
         // Services
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<AgentLiveness>();
         builder.Services.AddSingleton<BlobStorageService>();
         builder.Services.AddTransient<SqlHandler>();
         builder.Services.AddTransient<RestApiHandler>();
         builder.Services.AddSingleton<HandlerFactory>();
 
-        // Worker
+        // Worker + liveness watchdog (force-restarts the process if a job wedges)
         builder.Services.AddHostedService<AgentWorker>();
+        builder.Services.AddHostedService<WatchdogService>();
     }
     else
     {

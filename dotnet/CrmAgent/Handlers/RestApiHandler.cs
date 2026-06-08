@@ -452,6 +452,21 @@ public sealed partial class RestApiHandler : IJobHandler
         }
     }
 
+    /// <summary>
+    /// Increments the page counter and throws once the configured page cap is exceeded.
+    /// Guards every pagination loop against a misbehaving API (e.g. a cursor that never goes
+    /// null, or pages that never shrink) that would otherwise loop forever and hang the agent.
+    /// </summary>
+    private void EnsurePageLimit(ref int pageCount)
+    {
+        if (++pageCount > _agentConfig.MaxRestApiPages)
+        {
+            throw new InvalidOperationException(
+                $"REST API pagination exceeded the limit of {_agentConfig.MaxRestApiPages} pages — " +
+                "aborting to prevent an unbounded loop. Check the pagination configuration for this job.");
+        }
+    }
+
     internal static bool IsTransientError(HttpRequestException ex)
     {
         if (ex.StatusCode is null) return true; // Network error
@@ -557,10 +572,12 @@ public sealed partial class RestApiHandler : IJobHandler
     {
         using var http = CreateApiClient(config, token);
         var processedRows = 0;
+        var pageCount = 0;
         string? nextUrl = BuildBaseUrl(config);
 
         while (nextUrl is not null)
         {
+            EnsurePageLimit(ref pageCount);
             var (body, headers) = await FetchPageAsync(http, nextUrl, config.Method, ct);
             var records = GetRecords(body, config.DataField);
             if (records.ValueKind == JsonValueKind.Array)
@@ -584,10 +601,12 @@ public sealed partial class RestApiHandler : IJobHandler
         var pageSizeParam = pagination.PageSizeParam ?? "top";
         var processedRows = 0;
         var offset = 0;
+        var pageCount = 0;
         var baseUrl = BuildBaseUrl(config);
 
         while (true)
         {
+            EnsurePageLimit(ref pageCount);
             var separator = baseUrl.Contains('?') ? "&" : "?";
             var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}&{pageParam}={offset}";
             var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
@@ -619,11 +638,13 @@ public sealed partial class RestApiHandler : IJobHandler
         var cursorField = pagination.CursorField ?? "nextCursor";
         var pageParam = pagination.PageParam ?? "cursor";
         var processedRows = 0;
+        var pageCount = 0;
         string? cursor = null;
         var baseUrl = BuildBaseUrl(config);
 
         while (true)
         {
+            EnsurePageLimit(ref pageCount);
             var separator = baseUrl.Contains('?') ? "&" : "?";
             var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}";
             if (cursor is not null)
