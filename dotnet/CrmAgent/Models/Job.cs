@@ -65,7 +65,7 @@ public enum AuthType
 // Job configuration
 // ---------------------------------------------------------------------------
 
-public sealed class RestApiPagination
+public sealed record RestApiPagination
 {
     public required PaginationType Type { get; init; }
     public string? PageParam { get; init; }
@@ -124,7 +124,7 @@ public sealed class SqlJobConfig
     public required string[] HashFields { get; init; }
 }
 
-public sealed class RestApiJobConfig
+public sealed record RestApiJobConfig
 {
     public required string BaseUrl { get; init; }
     public required string Method { get; init; }
