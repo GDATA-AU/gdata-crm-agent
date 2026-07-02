@@ -14,11 +14,11 @@ public sealed class SqlHandler : IJobHandler
     private static readonly HashSet<string> AllowedFirstTokens = ["SELECT", "WITH"];
     private const int PreviewRowLimit = 100;
 
-    private readonly BlobStorageService _blob;
+    private readonly IBlobStorage _blob;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<SqlHandler> _logger;
 
-    public SqlHandler(BlobStorageService blob, AgentConfig agentConfig, ILogger<SqlHandler> logger)
+    public SqlHandler(IBlobStorage blob, AgentConfig agentConfig, ILogger<SqlHandler> logger)
     {
         _blob = blob;
         _agentConfig = agentConfig;

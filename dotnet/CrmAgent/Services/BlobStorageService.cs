@@ -6,7 +6,7 @@ namespace CrmAgent.Services;
 /// <summary>
 /// Helpers for uploading to the <c>erp-imports</c> Azure Blob Storage container.
 /// </summary>
-public sealed class BlobStorageService
+public sealed class BlobStorageService : IBlobStorage
 {
     private const string ContainerName = "erp-imports";
 

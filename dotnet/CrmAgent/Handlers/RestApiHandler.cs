@@ -16,12 +16,12 @@ public sealed partial class RestApiHandler : IJobHandler
     private const int PreviewRowLimit = 100;
     private static readonly int[] RetryDelaysMs = [1000, 3000, 9000];
 
-    private readonly BlobStorageService _blob;
+    private readonly IBlobStorage _blob;
     private readonly IHttpClientFactory _httpFactory;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<RestApiHandler> _logger;
 
-    public RestApiHandler(BlobStorageService blob, IHttpClientFactory httpFactory, AgentConfig agentConfig, ILogger<RestApiHandler> logger)
+    public RestApiHandler(IBlobStorage blob, IHttpClientFactory httpFactory, AgentConfig agentConfig, ILogger<RestApiHandler> logger)
     {
         _blob = blob;
         _httpFactory = httpFactory;

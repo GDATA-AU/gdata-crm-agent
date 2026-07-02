@@ -125,6 +125,7 @@ try
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<AgentLiveness>();
         builder.Services.AddSingleton<BlobStorageService>();
+        builder.Services.AddSingleton<IBlobStorage>(sp => sp.GetRequiredService<BlobStorageService>());
         builder.Services.AddTransient<SqlHandler>();
         builder.Services.AddTransient<RestApiHandler>();
         builder.Services.AddSingleton<HandlerFactory>();
