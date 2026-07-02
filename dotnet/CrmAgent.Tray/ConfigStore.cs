@@ -64,9 +64,7 @@ public static class ConfigStore
             {
                 ["PortalUrl"] = settings.PortalUrl,
                 ["AgentApiKey"] = settings.AgentApiKey,
-                ["AzureStorageConnectionString"] = settings.AzureStorageConnectionString,
-                ["PollIntervalMs"] = 5000,
-                ["HeartbeatIntervalMs"] = 5000
+                ["AzureStorageConnectionString"] = settings.AzureStorageConnectionString
             }
         };
         var json = root.ToJsonString(WriteOptions);

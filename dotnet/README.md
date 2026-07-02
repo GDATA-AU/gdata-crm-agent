@@ -116,8 +116,8 @@ Configuration can be set via `appsettings.json` or environment variables. Enviro
 | `Agent:PortalUrl` | `PORTAL_URL` | Yes | — | Base URL of the portal |
 | `Agent:AgentApiKey` | `AGENT_API_KEY` | Yes | — | API key for authentication |
 | `Agent:AzureStorageConnectionString` | `AZURE_STORAGE_CONNECTION_STRING` | Yes | — | Azure Blob Storage connection string |
-| `Agent:PollIntervalMs` | `POLL_INTERVAL_MS` | | `30000` | Poll interval in ms |
-| `Agent:HeartbeatIntervalMs` | `HEARTBEAT_INTERVAL_MS` | | `30000` | Heartbeat interval in ms |
+| `Agent:PollIntervalMs` | `POLL_INTERVAL_MS` | | `5000` | Poll interval in ms |
+| `Agent:HeartbeatIntervalMs` | `HEARTBEAT_INTERVAL_MS` | | `5000` | Heartbeat interval in ms |
 
 ### SQL connection strings
 
