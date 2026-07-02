@@ -5,10 +5,11 @@ using CrmAgent.Services;
 using Serilog;
 
 // ---------------------------------------------------------------------------
-// Configure Serilog for structured JSON logging (matches the Node.js pino output)
+// Configure Serilog for structured JSON logging: one JSON object per line so the
+// tray's log tailer can parse each entry.
 // ---------------------------------------------------------------------------
 Log.Logger = new LoggerConfiguration()
-.WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true))
+    .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true))
     .CreateBootstrapLogger();
 
 try

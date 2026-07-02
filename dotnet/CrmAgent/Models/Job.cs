@@ -73,7 +73,6 @@ public sealed class RestApiPagination
     public int? PageSize { get; init; }
     public string? CursorField { get; init; }
     public string? DataField { get; init; }
-    public string? TotalField { get; init; }
 }
 
 /// <summary>
@@ -216,7 +215,6 @@ public sealed class PollResponse
 public sealed class JobProgress
 {
     public required int ProcessedRows { get; init; }
-    public int? TotalRows { get; init; }
     public string? Message { get; init; }
     public List<Dictionary<string, object?>>? PreviewData { get; init; }
 }

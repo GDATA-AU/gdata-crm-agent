@@ -3,7 +3,10 @@ using CrmAgent.Models;
 namespace CrmAgent.Handlers;
 
 /// <summary>
-/// Interface that all job handlers implement.
+/// Executes a single job. Implementations must honour the cancellation token,
+/// report progress via the callback, and return a <see cref="HandlerResult"/> with a
+/// non-null <see cref="HandlerResult.BlobName"/> for non-preview jobs
+/// (<see cref="HandlerResult.PreviewRows"/> for preview jobs).
 /// </summary>
 public interface IJobHandler
 {

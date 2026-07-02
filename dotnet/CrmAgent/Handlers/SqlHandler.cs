@@ -122,7 +122,6 @@ public sealed class SqlHandler : IJobHandler
     }
 
     /// <summary>
-    /// Generic streaming reader that works with any ADO.NET DbDataReader.
     /// Reads rows one at a time and writes them as NDJSON with a row hash.
     /// </summary>
     private static async Task<int> StreamReaderAsync(

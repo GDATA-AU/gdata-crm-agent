@@ -540,11 +540,10 @@ public sealed partial class RestApiHandler : IJobHandler
             return nested.Value;
         }
 
-        // If the root is an array, return it directly. Otherwise wrap in an array-like approach.
+        // A single root object is treated as a one-element array.
         if (body.ValueKind == JsonValueKind.Array)
             return body;
 
-        // Single object — treated as one-element array. Parse it that way.
         using var doc = JsonDocument.Parse($"[{body.GetRawText()}]");
         return doc.RootElement.Clone();
     }

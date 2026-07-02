@@ -5,14 +5,11 @@ namespace CrmAgent;
 /// </summary>
 public sealed class AgentConfig
 {
-    public const string SectionName = "Agent";
-
     public required string PortalUrl { get; init; }
     public required string AgentApiKey { get; init; }
     public required string AzureStorageConnectionString { get; init; }
     public int PollIntervalMs { get; init; } = 5_000;
     public int HeartbeatIntervalMs { get; init; } = 30_000;
-    public string LogLevel { get; init; } = "Information";
 
     /// <summary>
     /// When <c>true</c> the MSSQL driver skips TLS certificate validation for on-premise

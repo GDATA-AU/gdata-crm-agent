@@ -23,7 +23,7 @@ public static class HashService
         {
             if (row.TryGetValue(hashFields[i], out var val) && val is not null)
             {
-                parts[i] = Convert.ToString(val)?.Trim() ?? "";
+                parts[i] = Convert.ToString(val)!.Trim();
             }
             else
             {

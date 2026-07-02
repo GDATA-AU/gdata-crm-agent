@@ -23,8 +23,11 @@ public sealed class UpdateService : IDisposable
     private readonly HttpClient _http;
     private volatile bool _checking;
 
-    /// <summary>Fired on the UI thread when a new MSI has been downloaded and is ready to install.</summary>
-    public event Action<string, string>? UpdateReady;
+    /// <summary>
+    /// Fired on the UI thread when a new MSI has been downloaded and is ready to install.
+    /// The argument is the new version; the downloaded path is available via <see cref="DownloadedMsiPath"/>.
+    /// </summary>
+    public event Action<string>? UpdateReady;
 
     /// <summary>Fired on the UI thread during MSI download with (bytesReceived, totalBytes). totalBytes is -1 if unknown.</summary>
     public event Action<long, long>? DownloadProgress;
@@ -198,7 +201,7 @@ public sealed class UpdateService : IDisposable
 
             AvailableVersion = release.TagName;
             DownloadedMsiPath = tempPath;
-            UpdateReady?.Invoke(release.TagName, tempPath);
+            UpdateReady?.Invoke(release.TagName);
         }
         catch
         {

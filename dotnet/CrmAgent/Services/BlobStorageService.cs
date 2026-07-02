@@ -22,18 +22,6 @@ public sealed class BlobStorageService
     }
 
     /// <summary>
-    /// Upload a stream to blob storage.
-    /// </summary>
-    public async Task UploadStreamAsync(string blobName, Stream stream, CancellationToken ct = default)
-    {
-        var blobClient = _container.Value.GetBlobClient(blobName);
-        await blobClient.UploadAsync(stream, new BlobUploadOptions
-        {
-            HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
-        }, cancellationToken: ct);
-    }
-
-    /// <summary>
     /// Open a write stream directly to blob storage. Data written to the
     /// returned stream is uploaded progressively, avoiding the need to buffer
     /// the entire payload in memory.

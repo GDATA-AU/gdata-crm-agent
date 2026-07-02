@@ -38,9 +38,6 @@ internal sealed class ActivityFeedPanel : Panel
         Font = Theme.Mono;
     }
 
-    /// <summary>Number of items currently in the feed.</summary>
-    public int ItemCount => _items.Count;
-
     /// <summary>Append entries and auto-scroll to the bottom.</summary>
     public void AddEntries(IReadOnlyList<LogTailer.LogEntry> entries)
     {

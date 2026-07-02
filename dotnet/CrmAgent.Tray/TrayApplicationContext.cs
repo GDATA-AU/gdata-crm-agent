@@ -85,7 +85,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void OnUpdateReady(string version, string msiPath)
+    private void OnUpdateReady(string version)
     {
         _updateMenuItem.Text = $"Update to {version}";
         _updateMenuItem.Font = new Font(_updateMenuItem.Font, FontStyle.Bold);
