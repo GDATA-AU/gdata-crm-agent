@@ -9,9 +9,6 @@ namespace CrmAgent.Tray;
 /// </summary>
 public sealed class LogTailer
 {
-    private static readonly string LogDirectory = Path.Combine(
-        ConfigStore.ConfigDirectory, "logs");
-
     private long _lastPosition;
     private string? _lastFile;
 
@@ -119,9 +116,9 @@ public sealed class LogTailer
 
     private static string? FindLatestLogFile()
     {
-        if (!Directory.Exists(LogDirectory)) return null;
+        if (!Directory.Exists(LogPaths.LogDirectory)) return null;
 
-        return Directory.GetFiles(LogDirectory, "agent*.log")
+        return Directory.GetFiles(LogPaths.LogDirectory, "agent*.log")
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }

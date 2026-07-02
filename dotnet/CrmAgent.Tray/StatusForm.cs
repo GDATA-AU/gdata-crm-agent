@@ -263,19 +263,7 @@ public sealed class StatusForm : Form
         RefreshDisplay();
     }
 
-    private static void OnOpenLogs(object? sender, EventArgs e)
-    {
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "GDATA CRM Agent",
-            "logs");
-        Directory.CreateDirectory(logDir);
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = logDir,
-            UseShellExecute = true,
-        });
-    }
+    private static void OnOpenLogs(object? sender, EventArgs e) => LogPaths.Open();
 
     private async void OnUpdateClick(object? sender, EventArgs e)
     {
@@ -285,36 +273,15 @@ public sealed class StatusForm : Form
             return;
         }
 
-        _updateBtn.Text = "Checking…";
-        _updateBtn.Enabled = false;
-        try
-        {
-            await _updateService.CheckNowAsync();
-            if (_updateService.AvailableVersion is not null)
-            {
-                SetUpdateAvailable(_updateService.AvailableVersion);
-            }
-            else
-            {
-                _updateBtn.Text = "Up to Date";
-                var resetTimer = new System.Windows.Forms.Timer { Interval = 3_000 };
-                resetTimer.Tick += (_, _) =>
-                {
-                    _updateBtn.Text = "Check for Updates";
-                    resetTimer.Stop();
-                    resetTimer.Dispose();
-                };
-                resetTimer.Start();
-            }
-        }
-        catch
-        {
-            _updateBtn.Text = "Check Failed";
-        }
-        finally
-        {
-            _updateBtn.Enabled = true;
-        }
+        // The update-found path is handled by the UpdateReady event (SetUpdateAvailable),
+        // so this only drives the checking/no-update/failure UI.
+        await UpdateCheckFlow.RunAsync(
+            _updateService,
+            text => _updateBtn.Text = text,
+            enabled => _updateBtn.Enabled = enabled,
+            noUpdateText: "Up to Date",
+            failedText: "Check Failed",
+            idleText: "Check for Updates");
     }
 
     /// <summary>Called by TrayApplicationContext when UpdateService fires UpdateReady.</summary>
