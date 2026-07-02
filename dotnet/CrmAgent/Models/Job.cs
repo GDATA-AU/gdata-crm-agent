@@ -35,6 +35,9 @@ public enum JobStatus
 [JsonConverter(typeof(JsonStringEnumConverter<PaginationType>))]
 public enum PaginationType
 {
+    [JsonStringEnumMemberName("single")]
+    Single,
+
     [JsonStringEnumMemberName("offset")]
     Offset,
 

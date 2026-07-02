@@ -525,6 +525,7 @@ public sealed partial class RestApiHandler : IJobHandler
         switch (config.Pagination)
         {
             case null:
+            case { Type: PaginationType.Single }:
             {
                 // Single fetch, no page-limit guard. Yield only if the payload is an array.
                 var url = BuildBaseUrl(config);
@@ -629,8 +630,9 @@ public sealed partial class RestApiHandler : IJobHandler
         var rows = new List<Dictionary<string, object?>>();
 
         // Clamp the page size so a paginated preview never fetches more than the preview
-        // limit per page (the page-size param is ignored by the single/link-header paths).
-        var previewConfig = config.Pagination is { } pagination
+        // limit per page. The single/link-header paths send no page-size param, so "single"
+        // (like no pagination) is left unchanged and takes the single-fetch path.
+        var previewConfig = config.Pagination is { Type: not PaginationType.Single } pagination
             ? config with { Pagination = pagination with { PageSize = Math.Min(pagination.PageSize ?? 100, IJobHandler.PreviewRowLimit) } }
             : config;
 

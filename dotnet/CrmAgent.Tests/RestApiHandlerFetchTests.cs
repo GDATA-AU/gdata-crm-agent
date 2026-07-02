@@ -3,6 +3,7 @@ using System.Text.Json;
 using CrmAgent;
 using CrmAgent.Handlers;
 using CrmAgent.Models;
+using CrmAgent.Services;
 using CrmAgent.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -401,5 +402,77 @@ public class RestApiHandlerFetchTests
         Assert.Equal(100, result.PreviewRows!.Count);
         Assert.Empty(blob.Blobs);
         Assert.Equal(2, stub.RequestedUrls.Count);
+    }
+
+    // ------------------------------------------------------------------
+    // "single" pagination type (portal contract gap — see commit message)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void Deserialize_SinglePaginationType_Succeeds()
+    {
+        // Regression test: the portal's config type union permits "single"; deserializing
+        // it must not throw (previously JsonStringEnumConverter<PaginationType> did).
+        const string json = "{\"baseUrl\":\"https://api.example.com/data\",\"pagination\":{\"type\":\"single\"}}";
+        var config = JsonSerializer.Deserialize<JobConfig>(json, JsonDefaults.CamelCase);
+
+        Assert.NotNull(config);
+        Assert.NotNull(config!.Pagination);
+        Assert.Equal(PaginationType.Single, config.Pagination!.Type);
+    }
+
+    [Fact]
+    public async Task Single_IssuesOneRequest_WritesRows()
+    {
+        var stub = new StubHttpMessageHandler()
+            .EnqueueJson("{\"data\":" + RowsJson(3, 0) + "}");
+        var blob = new FakeBlobStorage();
+        var handler = Handler(blob, stub, Config());
+
+        var job = Job(new JobConfig
+        {
+            BaseUrl = "https://api.example.com/data",
+            Pagination = new RestApiPagination { Type = PaginationType.Single },
+            DataField = "data",
+            BlobPath = "jobs/test",
+            HashFields = ["id"],
+        });
+
+        var result = await handler.ExecuteAsync(job, _ => { }, CancellationToken.None);
+
+        Assert.Equal(3, result.ProcessedRows);
+        Assert.Single(stub.RequestedUrls);
+        Assert.DoesNotContain("skip=", stub.RequestedUrls[0]);
+        Assert.DoesNotContain("top=", stub.RequestedUrls[0]);
+        Assert.DoesNotContain("cursor=", stub.RequestedUrls[0]);
+
+        var lines = TestGzip.DecompressToLines(blob.Blobs[result.BlobName!]);
+        Assert.Equal(3, lines.Length);
+        AssertEveryLineHasRowHash(lines);
+    }
+
+    [Fact]
+    public async Task Preview_Single_CapsAt100Rows_NoBlob()
+    {
+        var stub = new StubHttpMessageHandler()
+            .EnqueueJson("{\"data\":" + RowsJson(150, 0) + "}");
+        var blob = new FakeBlobStorage();
+        var handler = Handler(blob, stub, Config());
+
+        var job = Job(new JobConfig
+        {
+            BaseUrl = "https://api.example.com/data",
+            Pagination = new RestApiPagination { Type = PaginationType.Single },
+            DataField = "data",
+            BlobPath = "jobs/test",
+            HashFields = ["id"],
+        }, preview: true);
+
+        var result = await handler.ExecuteAsync(job, _ => { }, CancellationToken.None);
+
+        Assert.Null(result.BlobName);
+        Assert.Equal(100, result.PreviewRows!.Count);
+        Assert.Empty(blob.Blobs);
+        Assert.Single(stub.RequestedUrls);
     }
 }
