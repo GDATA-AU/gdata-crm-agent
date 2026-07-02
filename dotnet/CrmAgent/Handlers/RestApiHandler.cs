@@ -13,7 +13,6 @@ namespace CrmAgent.Handlers;
 /// </summary>
 public sealed partial class RestApiHandler : IJobHandler
 {
-    private const int PreviewRowLimit = 100;
     private static readonly int[] RetryDelaysMs = [1000, 3000, 9000];
 
     private readonly IBlobStorage _blob;
@@ -44,11 +43,11 @@ public sealed partial class RestApiHandler : IJobHandler
 
         var token = await ResolveTokenAsync(auth, ct);
 
-        // Preview mode: fetch up to PreviewRowLimit rows inline (no blob, no hashing).
+        // Preview mode: fetch up to IJobHandler.PreviewRowLimit rows inline (no blob, no hashing).
         if (job.Preview)
         {
             _logger.LogInformation("Starting REST API preview for job {JobId} url={BaseUrl} (limit={Limit})",
-                job.Id, config.BaseUrl, PreviewRowLimit);
+                job.Id, config.BaseUrl, IJobHandler.PreviewRowLimit);
 
             // For date-range configs, scope to the first window only.
             var previewDateRange = config.DateRange ?? TryAutoDetectDateRange(config);
@@ -406,7 +405,7 @@ public sealed partial class RestApiHandler : IJobHandler
             {
                 _logger.LogWarning(
                     "Transient HTTP error on attempt {Attempt} for {Url}: {StatusCode} — retrying in {Delay}ms",
-                    attempt + 1, RedactUrl(url), (int?)ex.StatusCode, RetryDelaysMs[attempt]);
+                    attempt + 1, Redaction.RedactUrl(url), (int?)ex.StatusCode, RetryDelaysMs[attempt]);
                 await Task.Delay(RetryDelaysMs[attempt], ct);
             }
         }
@@ -432,16 +431,6 @@ public sealed partial class RestApiHandler : IJobHandler
         if (ex.StatusCode is null) return true; // Network error
         var code = (int)ex.StatusCode;
         return code == 429 || code >= 500;
-    }
-
-    /// <summary>
-    /// Strip query parameters from a URL to avoid logging sensitive values
-    /// (API keys, tokens, PII) embedded in query strings.
-    /// </summary>
-    internal static string RedactUrl(string url)
-    {
-        var idx = url.IndexOf('?');
-        return idx >= 0 ? url[..idx] + "?[REDACTED]" : url;
     }
 
     /// <summary>
@@ -642,13 +631,13 @@ public sealed partial class RestApiHandler : IJobHandler
         // Clamp the page size so a paginated preview never fetches more than the preview
         // limit per page (the page-size param is ignored by the single/link-header paths).
         var previewConfig = config.Pagination is { } pagination
-            ? config with { Pagination = pagination with { PageSize = Math.Min(pagination.PageSize ?? 100, PreviewRowLimit) } }
+            ? config with { Pagination = pagination with { PageSize = Math.Min(pagination.PageSize ?? 100, IJobHandler.PreviewRowLimit) } }
             : config;
 
         await foreach (var records in FetchRecordPagesAsync(previewConfig, token, ct))
         {
-            CollectRecordsForPreview(records, rows, PreviewRowLimit - rows.Count);
-            if (rows.Count >= PreviewRowLimit)
+            CollectRecordsForPreview(records, rows, IJobHandler.PreviewRowLimit - rows.Count);
+            if (rows.Count >= IJobHandler.PreviewRowLimit)
                 break;
         }
 

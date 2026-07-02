@@ -10,12 +10,6 @@ namespace CrmAgent.Services;
 /// </summary>
 public sealed class PortalClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly HttpClient _http;
     private readonly ILogger<PortalClient> _logger;
 
@@ -77,7 +71,7 @@ public sealed class PortalClient
         var json = await response.Content.ReadAsStringAsync(ct);
         _logger.LogDebug("Poll response: {Body}", json);
 
-        var envelope = JsonSerializer.Deserialize<PollResponse>(json, JsonOptions);
+        var envelope = JsonSerializer.Deserialize<PollResponse>(json, JsonDefaults.CamelCase);
         return new PollResult(envelope?.Job, response.StatusCode);
     }
 
@@ -91,7 +85,7 @@ public sealed class PortalClient
         try
         {
             var url = $"api/agent/jobs/{Uri.EscapeDataString(jobId)}";
-            var response = await _http.PatchAsJsonAsync(url, update, JsonOptions, ct);
+            var response = await _http.PatchAsJsonAsync(url, update, JsonDefaults.CamelCase, ct);
 
             if (!response.IsSuccessStatusCode)
             {

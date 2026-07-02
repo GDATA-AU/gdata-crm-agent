@@ -31,9 +31,7 @@ public static class HashService
             }
         }
 
-        var input = string.Join("|", parts);
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
-        return Convert.ToHexStringLower(hashBytes);
+        return HashParts(parts);
     }
 
     /// <summary>
@@ -57,6 +55,11 @@ public static class HashService
             }
         }
 
+        return HashParts(parts);
+    }
+
+    private static string HashParts(string[] parts)
+    {
         var input = string.Join("|", parts);
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexStringLower(hashBytes);

@@ -167,12 +167,17 @@ public sealed class JobConfig
 
     public SqlJobConfig ToSqlConfig(Job job) => new()
     {
-        Server = Server ?? throw new InvalidOperationException("SQL job config missing 'server'"),
-        Database = Database ?? throw new InvalidOperationException("SQL job config missing 'database'"),
-        Query = Query ?? throw new InvalidOperationException("SQL job config missing 'query'"),
+        Server = RequireNonEmpty(Server, "server"),
+        Database = RequireNonEmpty(Database, "database"),
+        Query = RequireNonEmpty(Query, "query"),
         BlobPath = BlobPath ?? job.BlobPath ?? $"jobs/{job.Id}",
         HashFields = HashFields ?? job.HashFields ?? [],
     };
+
+    private static string RequireNonEmpty(string? value, string field) =>
+        string.IsNullOrEmpty(value)
+            ? throw new InvalidOperationException($"SQL job config missing '{field}'")
+            : value;
 
     public RestApiJobConfig ToRestApiConfig(Job job) => new()
     {

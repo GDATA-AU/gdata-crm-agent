@@ -10,5 +10,8 @@ namespace CrmAgent.Handlers;
 /// </summary>
 public interface IJobHandler
 {
+    /// <summary>Maximum number of rows returned inline for preview jobs (no blob output).</summary>
+    public const int PreviewRowLimit = 100;
+
     Task<HandlerResult> ExecuteAsync(Job job, Action<JobProgress> onProgress, CancellationToken ct);
 }
