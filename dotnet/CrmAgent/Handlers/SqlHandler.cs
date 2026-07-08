@@ -12,13 +12,12 @@ namespace CrmAgent.Handlers;
 public sealed class SqlHandler : IJobHandler
 {
     private static readonly HashSet<string> AllowedFirstTokens = ["SELECT", "WITH"];
-    private const int PreviewRowLimit = 100;
 
-    private readonly BlobStorageService _blob;
+    private readonly IBlobStorage _blob;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<SqlHandler> _logger;
 
-    public SqlHandler(BlobStorageService blob, AgentConfig agentConfig, ILogger<SqlHandler> logger)
+    public SqlHandler(IBlobStorage blob, AgentConfig agentConfig, ILogger<SqlHandler> logger)
     {
         _blob = blob;
         _agentConfig = agentConfig;
@@ -44,7 +43,7 @@ public sealed class SqlHandler : IJobHandler
         if (job.Preview)
         {
             var previewQuery = WrapQueryForPreview(config.Query);
-            _logger.LogInformation("Starting SQL preview for job {JobId} (limit={Limit})", job.Id, PreviewRowLimit);
+            _logger.LogInformation("Starting SQL preview for job {JobId} (limit={Limit})", job.Id, IJobHandler.PreviewRowLimit);
 
             var rows = await ExecutePreviewAsync(connectionString, previewQuery, ct);
 
@@ -89,11 +88,7 @@ public sealed class SqlHandler : IJobHandler
     private static string BuildMssqlConnectionString(
         SqlJobConfig config, bool trustServerCertificate, int connectTimeoutSeconds)
     {
-        if (string.IsNullOrEmpty(config.Server))
-            throw new InvalidOperationException("MSSQL job config missing 'server'");
-        if (string.IsNullOrEmpty(config.Database))
-            throw new InvalidOperationException("MSSQL job config missing 'database'");
-
+        // Server/Database are already validated non-empty by JobConfig.ToSqlConfig.
         var builder = new SqlConnectionStringBuilder
         {
             DataSource = config.Server,
@@ -107,9 +102,14 @@ public sealed class SqlHandler : IJobHandler
         return builder.ConnectionString;
     }
 
-    private async Task<int> ExecuteMssqlAsync(
-        string connectionString, string query, string[] hashFields,
-        NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
+    /// <summary>
+    /// Opens a connection, runs <paramref name="query"/> with the configured command
+    /// timeout, and hands the reader to <paramref name="read"/>. Connection, command,
+    /// and reader are all disposed on exit.
+    /// </summary>
+    private async Task<T> WithReaderAsync<T>(
+        string connectionString, string query,
+        Func<SqlDataReader, Task<T>> read, CancellationToken ct)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(ct);
@@ -118,11 +118,25 @@ public sealed class SqlHandler : IJobHandler
         command.CommandTimeout = _agentConfig.SqlCommandTimeoutSeconds;
         await using var reader = await command.ExecuteReaderAsync(ct);
 
-        return await StreamReaderAsync(reader, hashFields, writer, onProgress, ct);
+        return await read(reader);
     }
 
+    /// <summary>Materialises the current reader row into a dictionary keyed by column name.</summary>
+    private static Dictionary<string, object?> ReadRow(DbDataReader reader, string[] fieldNames)
+    {
+        var row = new Dictionary<string, object?>(fieldNames.Length);
+        for (var i = 0; i < fieldNames.Length; i++)
+            row[fieldNames[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+        return row;
+    }
+
+    private Task<int> ExecuteMssqlAsync(
+        string connectionString, string query, string[] hashFields,
+        NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
+        => WithReaderAsync(connectionString, query,
+            reader => StreamReaderAsync(reader, hashFields, writer, onProgress, ct), ct);
+
     /// <summary>
-    /// Generic streaming reader that works with any ADO.NET DbDataReader.
     /// Reads rows one at a time and writes them as NDJSON with a row hash.
     /// </summary>
     private static async Task<int> StreamReaderAsync(
@@ -136,12 +150,7 @@ public sealed class SqlHandler : IJobHandler
 
         while (await reader.ReadAsync(ct))
         {
-            var row = new Dictionary<string, object?>(fieldNames.Length);
-            for (var i = 0; i < fieldNames.Length; i++)
-            {
-                row[fieldNames[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            }
-
+            var row = ReadRow(reader, fieldNames);
             row["_rowHash"] = HashService.ComputeRowHash(row, hashFields);
             await writer.WriteRowAsync(row);
 
@@ -196,7 +205,7 @@ public sealed class SqlHandler : IJobHandler
             if (lastTopLevelSelect >= 0)
             {
                 var insertPos = lastTopLevelSelect + "SELECT".Length;
-                return string.Concat(trimmed.AsSpan(0, insertPos), $" TOP {PreviewRowLimit}", trimmed.AsSpan(insertPos));
+                return string.Concat(trimmed.AsSpan(0, insertPos), $" TOP {IJobHandler.PreviewRowLimit}", trimmed.AsSpan(insertPos));
             }
         }
 
@@ -206,38 +215,25 @@ public sealed class SqlHandler : IJobHandler
         if (trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
         {
             var insertPos = "SELECT".Length;
-            return string.Concat(trimmed.AsSpan(0, insertPos), $" TOP {PreviewRowLimit}", trimmed.AsSpan(insertPos));
+            return string.Concat(trimmed.AsSpan(0, insertPos), $" TOP {IJobHandler.PreviewRowLimit}", trimmed.AsSpan(insertPos));
         }
 
         // Fallback — should not be reached given the AllowedFirstTokens guard.
-        return $"SELECT TOP {PreviewRowLimit} * FROM ({trimmed}) AS _p";
+        return $"SELECT TOP {IJobHandler.PreviewRowLimit} * FROM ({trimmed}) AS _p";
     }
 
-    private async Task<List<Dictionary<string, object?>>> ExecutePreviewAsync(
+    private Task<List<Dictionary<string, object?>>> ExecutePreviewAsync(
         string connectionString, string query, CancellationToken ct)
-    {
-        await using var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync(ct);
-
-        await using var command = new SqlCommand(query, connection);
-        command.CommandTimeout = _agentConfig.SqlCommandTimeoutSeconds;
-        await using var reader = await command.ExecuteReaderAsync(ct);
-
-        var rows = new List<Dictionary<string, object?>>();
-        var fieldNames = Enumerable.Range(0, reader.FieldCount)
-            .Select(reader.GetName)
-            .ToArray();
-
-        while (await reader.ReadAsync(ct))
+        => WithReaderAsync(connectionString, query, async reader =>
         {
-            var row = new Dictionary<string, object?>(fieldNames.Length);
-            for (var i = 0; i < fieldNames.Length; i++)
-            {
-                row[fieldNames[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            }
-            rows.Add(row);
-        }
+            var rows = new List<Dictionary<string, object?>>();
+            var fieldNames = Enumerable.Range(0, reader.FieldCount)
+                .Select(reader.GetName)
+                .ToArray();
 
-        return rows;
-    }
+            while (await reader.ReadAsync(ct))
+                rows.Add(ReadRow(reader, fieldNames));
+
+            return rows;
+        }, ct);
 }

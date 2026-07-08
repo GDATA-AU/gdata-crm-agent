@@ -1,9 +1,9 @@
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CrmAgent.Models;
 using CrmAgent.Services;
-using Microsoft.Extensions.Http;
 
 namespace CrmAgent.Handlers;
 
@@ -13,15 +13,14 @@ namespace CrmAgent.Handlers;
 /// </summary>
 public sealed partial class RestApiHandler : IJobHandler
 {
-    private const int PreviewRowLimit = 100;
     private static readonly int[] RetryDelaysMs = [1000, 3000, 9000];
 
-    private readonly BlobStorageService _blob;
+    private readonly IBlobStorage _blob;
     private readonly IHttpClientFactory _httpFactory;
     private readonly AgentConfig _agentConfig;
     private readonly ILogger<RestApiHandler> _logger;
 
-    public RestApiHandler(BlobStorageService blob, IHttpClientFactory httpFactory, AgentConfig agentConfig, ILogger<RestApiHandler> logger)
+    public RestApiHandler(IBlobStorage blob, IHttpClientFactory httpFactory, AgentConfig agentConfig, ILogger<RestApiHandler> logger)
     {
         _blob = blob;
         _httpFactory = httpFactory;
@@ -44,46 +43,17 @@ public sealed partial class RestApiHandler : IJobHandler
 
         var token = await ResolveTokenAsync(auth, ct);
 
-        // Preview mode: fetch up to PreviewRowLimit rows inline (no blob, no hashing).
+        // Preview mode: fetch up to IJobHandler.PreviewRowLimit rows inline (no blob, no hashing).
         if (job.Preview)
         {
             _logger.LogInformation("Starting REST API preview for job {JobId} url={BaseUrl} (limit={Limit})",
-                job.Id, config.BaseUrl, PreviewRowLimit);
+                job.Id, config.BaseUrl, IJobHandler.PreviewRowLimit);
 
             // For date-range configs, scope to the first window only.
-            var previewConfig = config;
             var previewDateRange = config.DateRange ?? TryAutoDetectDateRange(config);
-            if (previewDateRange is not null && config.Params is not null)
-            {
-                var maxDays = previewDateRange.MaxDays ?? 31;
-                var format = previewDateRange.Format ?? "yyyy-MM-ddTHH:mm:ss.fffZ";
-
-                if (config.Params.TryGetValue(previewDateRange.StartParam, out var startStr) &&
-                    config.Params.TryGetValue(previewDateRange.EndParam, out var endStr))
-                {
-                    var rangeStart = DateTime.Parse(startStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
-                    var rangeEnd = DateTime.Parse(endStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
-                    var firstWindowEnd = rangeStart.AddDays(maxDays);
-                    if (firstWindowEnd > rangeEnd) firstWindowEnd = rangeEnd;
-
-                    var windowParams = new Dictionary<string, string>(config.Params);
-                    windowParams[previewDateRange.EndParam] = firstWindowEnd.ToString(format);
-
-                    previewConfig = new RestApiJobConfig
-                    {
-                        BaseUrl = config.BaseUrl,
-                        Method = config.Method,
-                        Headers = config.Headers,
-                        Auth = config.Auth,
-                        Pagination = config.Pagination,
-                        Params = windowParams,
-                        DateRange = null,
-                        DataField = config.DataField,
-                        BlobPath = config.BlobPath,
-                        HashFields = config.HashFields,
-                    };
-                }
-            }
+            var previewConfig = previewDateRange is not null
+                ? ApplyFirstDateWindow(config, previewDateRange)
+                : config;
 
             var rows = await FetchPreviewPagesAsync(previewConfig, token, ct);
 
@@ -101,7 +71,7 @@ public sealed partial class RestApiHandler : IJobHandler
         var dateRange = config.DateRange ?? TryAutoDetectDateRange(config);
         if (dateRange is not null)
         {
-            var chunkedConfig = ConfigWithDateRange(config, dateRange);
+            var chunkedConfig = config with { DateRange = dateRange };
             return await ExecuteWithDateChunkingAsync(chunkedConfig, token, blobName, onProgress, ct);
         }
 
@@ -135,7 +105,7 @@ public sealed partial class RestApiHandler : IJobHandler
                 "API returned date-range error, auto-chunking with detected params '{StartParam}' and '{EndParam}'",
                 fallbackDateRange.StartParam, fallbackDateRange.EndParam);
 
-            var chunkedConfig = ConfigWithDateRange(config, fallbackDateRange);
+            var chunkedConfig = config with { DateRange = fallbackDateRange };
             return await ExecuteWithDateChunkingAsync(chunkedConfig, token, blobName, onProgress, ct);
         }
         catch
@@ -213,19 +183,8 @@ public sealed partial class RestApiHandler : IJobHandler
                     chunkParams[dr.StartParam] = chunkStart.ToString(format);
                     chunkParams[dr.EndParam] = chunkEndForRequest.ToString(format);
 
-                    var chunkConfig = new RestApiJobConfig
-                    {
-                        BaseUrl = config.BaseUrl,
-                        Method = config.Method,
-                        Headers = config.Headers,
-                        Auth = config.Auth,
-                        Pagination = config.Pagination,
-                        Params = chunkParams,
-                        DateRange = null, // prevent recursion
-                        DataField = config.DataField,
-                        BlobPath = config.BlobPath,
-                        HashFields = config.HashFields,
-                    };
+                    // DateRange = null prevents recursion back into chunking.
+                    var chunkConfig = config with { Params = chunkParams, DateRange = null };
 
                     var chunkRows = await FetchAllPagesAsync(chunkConfig, token, writer, onProgress, ct);
                     totalProcessedRows += chunkRows;
@@ -263,20 +222,20 @@ public sealed partial class RestApiHandler : IJobHandler
     }
 
     /// <summary>
-    /// Fetches all pages for a given config (single page or paginated) and writes to the provided writer.
+    /// Fetches all pages for a given config (single page or paginated) and writes to the provided writer,
+    /// reporting progress after each page.
     /// </summary>
     private async Task<int> FetchAllPagesAsync(
         RestApiJobConfig config, string? token,
         NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
     {
-        return config.Pagination switch
+        var processedRows = 0;
+        await foreach (var records in FetchRecordPagesAsync(config, token, ct))
         {
-            null => await FetchSinglePageAsync(config, token, config.HashFields, writer, ct),
-            { Type: PaginationType.LinkHeader } => await FetchWithLinkHeaderAsync(config, token, config.HashFields, writer, onProgress, ct),
-            { Type: PaginationType.Offset } => await FetchWithOffsetAsync(config, token, config.HashFields, writer, onProgress, ct),
-            { Type: PaginationType.Cursor } => await FetchWithCursorAsync(config, token, config.HashFields, writer, onProgress, ct),
-            _ => throw new InvalidOperationException($"Unsupported pagination type: {config.Pagination.Type}"),
-        };
+            processedRows += await WriteRecordsAsync(records, config.HashFields, writer);
+            onProgress(new JobProgress { ProcessedRows = processedRows, Message = $"Processed {processedRows} records..." });
+        }
+        return processedRows;
     }
 
     // -----------------------------------------------------------------------
@@ -446,7 +405,7 @@ public sealed partial class RestApiHandler : IJobHandler
             {
                 _logger.LogWarning(
                     "Transient HTTP error on attempt {Attempt} for {Url}: {StatusCode} — retrying in {Delay}ms",
-                    attempt + 1, RedactUrl(url), (int?)ex.StatusCode, RetryDelaysMs[attempt]);
+                    attempt + 1, Redaction.RedactUrl(url), (int?)ex.StatusCode, RetryDelaysMs[attempt]);
                 await Task.Delay(RetryDelaysMs[attempt], ct);
             }
         }
@@ -475,16 +434,6 @@ public sealed partial class RestApiHandler : IJobHandler
     }
 
     /// <summary>
-    /// Strip query parameters from a URL to avoid logging sensitive values
-    /// (API keys, tokens, PII) embedded in query strings.
-    /// </summary>
-    internal static string RedactUrl(string url)
-    {
-        var idx = url.IndexOf('?');
-        return idx >= 0 ? url[..idx] + "?[REDACTED]" : url;
-    }
-
-    /// <summary>
     /// Resolve a dot-notation path into a JSON value.
     /// </summary>
     private static JsonElement? GetNestedValue(JsonElement root, string path)
@@ -500,6 +449,28 @@ public sealed partial class RestApiHandler : IJobHandler
     }
 
     /// <summary>
+    /// Materialise a JSON record object to a dictionary, mapping JSON value kinds to
+    /// CLR types (nested objects/arrays are kept as their raw JSON text).
+    /// </summary>
+    private static Dictionary<string, object?> ToRow(JsonElement record)
+    {
+        var row = new Dictionary<string, object?>();
+        foreach (var prop in record.EnumerateObject())
+        {
+            row[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString(),
+                JsonValueKind.Number => prop.Value.GetDecimal(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => prop.Value.GetRawText(),
+            };
+        }
+        return row;
+    }
+
+    /// <summary>
     /// Write an array of JSON records as NDJSON rows with hashes.
     /// Returns the number of records written.
     /// </summary>
@@ -509,20 +480,7 @@ public sealed partial class RestApiHandler : IJobHandler
         var count = 0;
         foreach (var record in records.EnumerateArray())
         {
-            // Materialise to dictionary so we can add _rowHash.
-            var row = new Dictionary<string, object?>();
-            foreach (var prop in record.EnumerateObject())
-            {
-                row[prop.Name] = prop.Value.ValueKind switch
-                {
-                    JsonValueKind.String => prop.Value.GetString(),
-                    JsonValueKind.Number => prop.Value.GetDecimal(),
-                    JsonValueKind.True => true,
-                    JsonValueKind.False => false,
-                    JsonValueKind.Null => null,
-                    _ => prop.Value.GetRawText(),
-                };
-            }
+            var row = ToRow(record);
             row["_rowHash"] = HashService.ComputeRowHash(record, hashFields);
             await writer.WriteRowAsync(row);
             count++;
@@ -540,135 +498,126 @@ public sealed partial class RestApiHandler : IJobHandler
             return nested.Value;
         }
 
-        // If the root is an array, return it directly. Otherwise wrap in an array-like approach.
+        // A single root object is treated as a one-element array.
         if (body.ValueKind == JsonValueKind.Array)
             return body;
 
-        // Single object — treated as one-element array. Parse it that way.
         using var doc = JsonDocument.Parse($"[{body.GetRawText()}]");
         return doc.RootElement.Clone();
     }
 
     // -----------------------------------------------------------------------
-    // Pagination strategies
+    // Unified pagination
     // -----------------------------------------------------------------------
 
-    private async Task<int> FetchSinglePageAsync(
-        RestApiJobConfig config, string? token, string[] hashFields,
-        NdjsonGzipWriter writer, CancellationToken ct)
+    /// <summary>
+    /// Yields the records array (post-<see cref="GetRecords"/>) of each page for any
+    /// pagination strategy. Creates its own HTTP client and enforces the page cap on
+    /// every request in the paginated strategies. Termination semantics per strategy
+    /// exactly match the behavior pinned by the characterization tests.
+    /// </summary>
+    private async IAsyncEnumerable<JsonElement> FetchRecordPagesAsync(
+        RestApiJobConfig config, string? token,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         using var http = CreateApiClient(config, token);
-        var url = BuildBaseUrl(config);
-        var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-        var records = GetRecords(body, config.DataField);
-        return records.ValueKind == JsonValueKind.Array
-            ? await WriteRecordsAsync(records, hashFields, writer)
-            : 0;
-    }
 
-    private async Task<int> FetchWithLinkHeaderAsync(
-        RestApiJobConfig config, string? token, string[] hashFields,
-        NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
-    {
-        using var http = CreateApiClient(config, token);
-        var processedRows = 0;
-        var pageCount = 0;
-        string? nextUrl = BuildBaseUrl(config);
-
-        while (nextUrl is not null)
+        switch (config.Pagination)
         {
-            EnsurePageLimit(ref pageCount);
-            var (body, headers) = await FetchPageAsync(http, nextUrl, config.Method, ct);
-            var records = GetRecords(body, config.DataField);
-            if (records.ValueKind == JsonValueKind.Array)
-                processedRows += await WriteRecordsAsync(records, hashFields, writer);
+            case null:
+            case { Type: PaginationType.Single }:
+            {
+                // Single fetch, no page-limit guard. Yield only if the payload is an array.
+                var url = BuildBaseUrl(config);
+                var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
+                var records = GetRecords(body, config.DataField);
+                if (records.ValueKind == JsonValueKind.Array)
+                    yield return records;
+                yield break;
+            }
 
-            onProgress(new JobProgress { ProcessedRows = processedRows, Message = $"Processed {processedRows} records..." });
-            nextUrl = ParseLinkHeaderNext(headers);
+            case { Type: PaginationType.LinkHeader }:
+            {
+                var pageCount = 0;
+                string? nextUrl = BuildBaseUrl(config);
+                while (nextUrl is not null)
+                {
+                    EnsurePageLimit(ref pageCount);
+                    var (body, headers) = await FetchPageAsync(http, nextUrl, config.Method, ct);
+                    var records = GetRecords(body, config.DataField);
+                    // Keep following links even when a page's records aren't an array.
+                    if (records.ValueKind == JsonValueKind.Array)
+                        yield return records;
+                    nextUrl = ParseLinkHeaderNext(headers);
+                }
+                yield break;
+            }
+
+            case { Type: PaginationType.Offset } pagination:
+            {
+                var pageSize = pagination.PageSize ?? 100;
+                var pageParam = pagination.PageParam ?? "skip";
+                var pageSizeParam = pagination.PageSizeParam ?? "top";
+                var offset = 0;
+                var pageCount = 0;
+                var baseUrl = BuildBaseUrl(config);
+
+                while (true)
+                {
+                    EnsurePageLimit(ref pageCount);
+                    var separator = baseUrl.Contains('?') ? "&" : "?";
+                    var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}&{pageParam}={offset}";
+                    var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
+                    var records = GetRecords(body, config.DataField);
+
+                    if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
+                        yield break;
+
+                    yield return records;
+
+                    if (records.GetArrayLength() < pageSize) yield break;
+                    offset += pageSize;
+                }
+            }
+
+            case { Type: PaginationType.Cursor } pagination:
+            {
+                var pageSize = pagination.PageSize ?? 100;
+                var pageSizeParam = pagination.PageSizeParam ?? "pageSize";
+                var cursorField = pagination.CursorField ?? "nextCursor";
+                var pageParam = pagination.PageParam ?? "cursor";
+                var pageCount = 0;
+                string? cursor = null;
+                var baseUrl = BuildBaseUrl(config);
+
+                while (true)
+                {
+                    EnsurePageLimit(ref pageCount);
+                    var separator = baseUrl.Contains('?') ? "&" : "?";
+                    var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}";
+                    if (cursor is not null)
+                        url += $"&{pageParam}={Uri.EscapeDataString(cursor)}";
+
+                    var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
+                    var records = GetRecords(body, config.DataField);
+
+                    if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
+                        yield break;
+
+                    yield return records;
+
+                    var nextCursor = GetNestedValue(body, cursorField);
+                    if (nextCursor is null ||
+                        nextCursor.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                        yield break;
+
+                    cursor = nextCursor.Value.ToString();
+                }
+            }
+
+            default:
+                throw new InvalidOperationException($"Unsupported pagination type: {config.Pagination.Type}");
         }
-
-        return processedRows;
-    }
-
-    private async Task<int> FetchWithOffsetAsync(
-        RestApiJobConfig config, string? token, string[] hashFields,
-        NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
-    {
-        using var http = CreateApiClient(config, token);
-        var pagination = config.Pagination!;
-        var pageSize = pagination.PageSize ?? 100;
-        var pageParam = pagination.PageParam ?? "skip";
-        var pageSizeParam = pagination.PageSizeParam ?? "top";
-        var processedRows = 0;
-        var offset = 0;
-        var pageCount = 0;
-        var baseUrl = BuildBaseUrl(config);
-
-        while (true)
-        {
-            EnsurePageLimit(ref pageCount);
-            var separator = baseUrl.Contains('?') ? "&" : "?";
-            var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}&{pageParam}={offset}";
-            var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-            var records = GetRecords(body, config.DataField);
-
-            if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
-                break;
-
-            var count = await WriteRecordsAsync(records, hashFields, writer);
-            processedRows += count;
-
-            onProgress(new JobProgress { ProcessedRows = processedRows, Message = $"Processed {processedRows} records..." });
-
-            if (count < pageSize) break;
-            offset += pageSize;
-        }
-
-        return processedRows;
-    }
-
-    private async Task<int> FetchWithCursorAsync(
-        RestApiJobConfig config, string? token, string[] hashFields,
-        NdjsonGzipWriter writer, Action<JobProgress> onProgress, CancellationToken ct)
-    {
-        using var http = CreateApiClient(config, token);
-        var pagination = config.Pagination!;
-        var pageSize = pagination.PageSize ?? 100;
-        var pageSizeParam = pagination.PageSizeParam ?? "pageSize";
-        var cursorField = pagination.CursorField ?? "nextCursor";
-        var pageParam = pagination.PageParam ?? "cursor";
-        var processedRows = 0;
-        var pageCount = 0;
-        string? cursor = null;
-        var baseUrl = BuildBaseUrl(config);
-
-        while (true)
-        {
-            EnsurePageLimit(ref pageCount);
-            var separator = baseUrl.Contains('?') ? "&" : "?";
-            var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}";
-            if (cursor is not null)
-                url += $"&{pageParam}={Uri.EscapeDataString(cursor)}";
-
-            var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-            var records = GetRecords(body, config.DataField);
-
-            if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
-                break;
-
-            processedRows += await WriteRecordsAsync(records, hashFields, writer);
-
-            onProgress(new JobProgress { ProcessedRows = processedRows, Message = $"Processed {processedRows} records..." });
-
-            var nextCursor = GetNestedValue(body, cursorField);
-            if (nextCursor is null ||
-                nextCursor.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                break;
-
-            cursor = nextCursor.Value.ToString();
-        }
-
-        return processedRows;
     }
 
     // -----------------------------------------------------------------------
@@ -678,96 +627,20 @@ public sealed partial class RestApiHandler : IJobHandler
     private async Task<List<Dictionary<string, object?>>> FetchPreviewPagesAsync(
         RestApiJobConfig config, string? token, CancellationToken ct)
     {
-        using var http = CreateApiClient(config, token);
         var rows = new List<Dictionary<string, object?>>();
 
-        if (config.Pagination is null)
+        // Clamp the page size so a paginated preview never fetches more than the preview
+        // limit per page. The single/link-header paths send no page-size param, so "single"
+        // (like no pagination) is left unchanged and takes the single-fetch path.
+        var previewConfig = config.Pagination is { Type: not PaginationType.Single } pagination
+            ? config with { Pagination = pagination with { PageSize = Math.Min(pagination.PageSize ?? 100, IJobHandler.PreviewRowLimit) } }
+            : config;
+
+        await foreach (var records in FetchRecordPagesAsync(previewConfig, token, ct))
         {
-            // Single page
-            var url = BuildBaseUrl(config);
-            var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-            var records = GetRecords(body, config.DataField);
-            if (records.ValueKind == JsonValueKind.Array)
-                CollectRecordsForPreview(records, rows, PreviewRowLimit);
-            return rows;
-        }
-
-        // Paginated — fetch pages until we reach PreviewRowLimit
-        switch (config.Pagination.Type)
-        {
-            case PaginationType.LinkHeader:
-                {
-                    string? nextUrl = BuildBaseUrl(config);
-                    while (nextUrl is not null && rows.Count < PreviewRowLimit)
-                    {
-                        var (body, headers) = await FetchPageAsync(http, nextUrl, config.Method, ct);
-                        var records = GetRecords(body, config.DataField);
-                        if (records.ValueKind == JsonValueKind.Array)
-                            CollectRecordsForPreview(records, rows, PreviewRowLimit - rows.Count);
-                        nextUrl = ParseLinkHeaderNext(headers);
-                    }
-                    break;
-                }
-            case PaginationType.Offset:
-                {
-                    var pageSize = Math.Min(config.Pagination.PageSize ?? 100, PreviewRowLimit);
-                    var pageParam = config.Pagination.PageParam ?? "skip";
-                    var pageSizeParam = config.Pagination.PageSizeParam ?? "top";
-                    var offset = 0;
-                    var baseUrl = BuildBaseUrl(config);
-
-                    while (rows.Count < PreviewRowLimit)
-                    {
-                        var separator = baseUrl.Contains('?') ? "&" : "?";
-                        var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}&{pageParam}={offset}";
-                        var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-                        var records = GetRecords(body, config.DataField);
-
-                        if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
-                            break;
-
-                        var before = rows.Count;
-                        CollectRecordsForPreview(records, rows, PreviewRowLimit - rows.Count);
-                        var added = rows.Count - before;
-
-                        if (added < pageSize) break;
-                        offset += pageSize;
-                    }
-                    break;
-                }
-            case PaginationType.Cursor:
-                {
-                    var pageSize = Math.Min(config.Pagination.PageSize ?? 100, PreviewRowLimit);
-                    var pageSizeParam = config.Pagination.PageSizeParam ?? "pageSize";
-                    var cursorField = config.Pagination.CursorField ?? "nextCursor";
-                    var pageParam = config.Pagination.PageParam ?? "cursor";
-                    string? cursor = null;
-                    var baseUrl = BuildBaseUrl(config);
-
-                    while (rows.Count < PreviewRowLimit)
-                    {
-                        var separator = baseUrl.Contains('?') ? "&" : "?";
-                        var url = $"{baseUrl}{separator}{pageSizeParam}={pageSize}";
-                        if (cursor is not null)
-                            url += $"&{pageParam}={Uri.EscapeDataString(cursor)}";
-
-                        var (body, _) = await FetchPageAsync(http, url, config.Method, ct);
-                        var records = GetRecords(body, config.DataField);
-
-                        if (records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
-                            break;
-
-                        CollectRecordsForPreview(records, rows, PreviewRowLimit - rows.Count);
-
-                        var nextCursor = GetNestedValue(body, cursorField);
-                        if (nextCursor is null ||
-                            nextCursor.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                            break;
-
-                        cursor = nextCursor.Value.ToString();
-                    }
-                    break;
-                }
+            CollectRecordsForPreview(records, rows, IJobHandler.PreviewRowLimit - rows.Count);
+            if (rows.Count >= IJobHandler.PreviewRowLimit)
+                break;
         }
 
         return rows;
@@ -783,21 +656,7 @@ public sealed partial class RestApiHandler : IJobHandler
         foreach (var record in records.EnumerateArray())
         {
             if (limit <= 0) break;
-
-            var row = new Dictionary<string, object?>();
-            foreach (var prop in record.EnumerateObject())
-            {
-                row[prop.Name] = prop.Value.ValueKind switch
-                {
-                    JsonValueKind.String => prop.Value.GetString(),
-                    JsonValueKind.Number => prop.Value.GetDecimal(),
-                    JsonValueKind.True => true,
-                    JsonValueKind.False => false,
-                    JsonValueKind.Null => null,
-                    _ => prop.Value.GetRawText(),
-                };
-            }
-            target.Add(row);
+            target.Add(ToRow(record));
             limit--;
         }
     }
@@ -874,20 +733,7 @@ public sealed partial class RestApiHandler : IJobHandler
             dateCandidates.Sort((a, b) => a.Value.CompareTo(b.Value));
             var start = dateCandidates[0];
             var end = dateCandidates[^1];
-            var span = (end.Value - start.Value).TotalDays;
-
-            if (force || span > 31)
-            {
-                _logger.LogInformation(
-                    "Auto-detected date range params '{StartParam}'→'{EndParam}' spanning {Days:F0} days",
-                    start.Key, end.Key, span);
-                return new RestApiDateRange
-                {
-                    StartParam = start.Key,
-                    EndParam = end.Key,
-                    MaxDays = 31,
-                };
-            }
+            return TryBuildDateRange(start.Key, config.Params[start.Key], end.Key, config.Params[end.Key], force);
         }
 
         return null;
@@ -928,21 +774,32 @@ public sealed partial class RestApiHandler : IJobHandler
                 msg.Contains("max 31 days", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static RestApiJobConfig ConfigWithDateRange(RestApiJobConfig config, RestApiDateRange dateRange)
+    /// <summary>
+    /// Scopes a config to the first date window (used for previews of date-range jobs).
+    /// Returns the config unchanged when the start/end params are missing; otherwise clamps
+    /// the end param to start + MaxDays (bounded by the real range end) and clears DateRange.
+    /// </summary>
+    private static RestApiJobConfig ApplyFirstDateWindow(RestApiJobConfig config, RestApiDateRange dr)
     {
-        return new RestApiJobConfig
+        if (config.Params is null ||
+            !config.Params.TryGetValue(dr.StartParam, out var startStr) ||
+            !config.Params.TryGetValue(dr.EndParam, out var endStr))
+            return config;
+
+        var maxDays = dr.MaxDays ?? 31;
+        var format = dr.Format ?? "yyyy-MM-ddTHH:mm:ss.fffZ";
+
+        var rangeStart = DateTime.Parse(startStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        var rangeEnd = DateTime.Parse(endStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        var firstWindowEnd = rangeStart.AddDays(maxDays);
+        if (firstWindowEnd > rangeEnd) firstWindowEnd = rangeEnd;
+
+        var windowParams = new Dictionary<string, string>(config.Params)
         {
-            BaseUrl = config.BaseUrl,
-            Method = config.Method,
-            Headers = config.Headers,
-            Auth = config.Auth,
-            Pagination = config.Pagination,
-            Params = config.Params,
-            DateRange = dateRange,
-            DataField = config.DataField,
-            BlobPath = config.BlobPath,
-            HashFields = config.HashFields,
+            [dr.EndParam] = firstWindowEnd.ToString(format),
         };
+
+        return config with { Params = windowParams, DateRange = null };
     }
 
     /// <summary>

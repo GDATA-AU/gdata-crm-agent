@@ -83,7 +83,7 @@ public sealed class ConnectForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        // Explicit row heights so multi-line labels ("Azure Storage\nConnection String") aren't clipped
+        // AutoSize rows so multi-line labels ("Azure Storage\nConnection String") aren't clipped
         for (var i = 0; i < 10; i++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 

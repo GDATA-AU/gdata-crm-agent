@@ -12,12 +12,6 @@ namespace CrmAgent.Services;
 /// </summary>
 public static class AuthDecryptionService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
     public static RestApiAuth Decrypt(RestApiAuth encryptedAuth, string rawApiKey)
     {
         if (string.IsNullOrEmpty(encryptedAuth.Payload) ||
@@ -35,7 +29,7 @@ public static class AuthDecryptionService
         aes.Decrypt(iv, ciphertext, authTag, plaintext);
 
         var json = Encoding.UTF8.GetString(plaintext);
-        return JsonSerializer.Deserialize<RestApiAuth>(json, JsonOptions)
+        return JsonSerializer.Deserialize<RestApiAuth>(json, JsonDefaults.CamelCase)
             ?? throw new InvalidOperationException("Decrypted auth block is null");
     }
 }

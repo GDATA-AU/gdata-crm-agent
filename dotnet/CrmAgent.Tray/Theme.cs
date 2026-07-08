@@ -85,11 +85,4 @@ internal static class Theme
         tb.BorderStyle = BorderStyle.FixedSingle;
         tb.Font = Body;
     }
-
-    /// <summary>Style a label as secondary / caption text.</summary>
-    public static void StyleCaption(Label lbl)
-    {
-        lbl.ForeColor = TextSecondary;
-        lbl.Font = Small;
-    }
 }

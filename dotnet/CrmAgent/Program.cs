@@ -2,13 +2,15 @@ using Azure.Storage.Blobs;
 using CrmAgent;
 using CrmAgent.Handlers;
 using CrmAgent.Services;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 
 // ---------------------------------------------------------------------------
-// Configure Serilog for structured JSON logging (matches the Node.js pino output)
+// Configure Serilog for structured JSON logging: one JSON object per line so the
+// tray's log tailer can parse each entry.
 // ---------------------------------------------------------------------------
 Log.Logger = new LoggerConfiguration()
-.WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true))
+    .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true))
     .CreateBootstrapLogger();
 
 try
@@ -84,33 +86,25 @@ try
             PortalUrl = portalUrl!.TrimEnd('/'),
             AgentApiKey = apiKey!,
             AzureStorageConnectionString = storageConnectionString!,
-            PollIntervalMs = int.TryParse(
-                builder.Configuration["Agent:PollIntervalMs"] ?? Environment.GetEnvironmentVariable("POLL_INTERVAL_MS"),
-                out var poll) ? poll : 30_000,
-            HeartbeatIntervalMs = int.TryParse(
-                builder.Configuration["Agent:HeartbeatIntervalMs"] ?? Environment.GetEnvironmentVariable("HEARTBEAT_INTERVAL_MS"),
-                out var hb) ? hb : 30_000,
+            PollIntervalMs = GetInt(builder.Configuration, "Agent:PollIntervalMs", "POLL_INTERVAL_MS",
+                AgentConfig.DefaultPollIntervalMs),
+            HeartbeatIntervalMs = GetInt(builder.Configuration, "Agent:HeartbeatIntervalMs", "HEARTBEAT_INTERVAL_MS",
+                AgentConfig.DefaultHeartbeatIntervalMs),
             SqlTrustServerCertificate = bool.TryParse(
                 builder.Configuration["Agent:SqlTrustServerCertificate"] ?? Environment.GetEnvironmentVariable("SQL_TRUST_SERVER_CERTIFICATE"),
                 out var trustCert) ? trustCert : true,
-            RestApiTimeoutSeconds = int.TryParse(
-                builder.Configuration["Agent:RestApiTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("REST_API_TIMEOUT_SECONDS"),
-                out var apiTimeout) && apiTimeout >= 1 ? apiTimeout : 300,
-            SqlCommandTimeoutSeconds = int.TryParse(
-                builder.Configuration["Agent:SqlCommandTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("SQL_COMMAND_TIMEOUT_SECONDS"),
-                out var sqlTimeout) && sqlTimeout >= 0 ? sqlTimeout : 300,
-            SqlConnectTimeoutSeconds = int.TryParse(
-                builder.Configuration["Agent:SqlConnectTimeoutSeconds"] ?? Environment.GetEnvironmentVariable("SQL_CONNECT_TIMEOUT_SECONDS"),
-                out var sqlConnTimeout) && sqlConnTimeout >= 1 ? sqlConnTimeout : 15,
-            MaxJobDurationSeconds = int.TryParse(
-                builder.Configuration["Agent:MaxJobDurationSeconds"] ?? Environment.GetEnvironmentVariable("MAX_JOB_DURATION_SECONDS"),
-                out var maxJobDur) && maxJobDur >= 0 ? maxJobDur : 1800,
-            WatchdogGraceSeconds = int.TryParse(
-                builder.Configuration["Agent:WatchdogGraceSeconds"] ?? Environment.GetEnvironmentVariable("WATCHDOG_GRACE_SECONDS"),
-                out var watchdogGrace) && watchdogGrace >= 0 ? watchdogGrace : 300,
-            MaxRestApiPages = int.TryParse(
-                builder.Configuration["Agent:MaxRestApiPages"] ?? Environment.GetEnvironmentVariable("MAX_REST_API_PAGES"),
-                out var maxPages) && maxPages >= 1 ? maxPages : 100_000,
+            RestApiTimeoutSeconds = GetInt(builder.Configuration, "Agent:RestApiTimeoutSeconds", "REST_API_TIMEOUT_SECONDS",
+                AgentConfig.DefaultRestApiTimeoutSeconds, min: 1),
+            SqlCommandTimeoutSeconds = GetInt(builder.Configuration, "Agent:SqlCommandTimeoutSeconds", "SQL_COMMAND_TIMEOUT_SECONDS",
+                AgentConfig.DefaultSqlCommandTimeoutSeconds, min: 0),
+            SqlConnectTimeoutSeconds = GetInt(builder.Configuration, "Agent:SqlConnectTimeoutSeconds", "SQL_CONNECT_TIMEOUT_SECONDS",
+                AgentConfig.DefaultSqlConnectTimeoutSeconds, min: 1),
+            MaxJobDurationSeconds = GetInt(builder.Configuration, "Agent:MaxJobDurationSeconds", "MAX_JOB_DURATION_SECONDS",
+                AgentConfig.DefaultMaxJobDurationSeconds, min: 0),
+            WatchdogGraceSeconds = GetInt(builder.Configuration, "Agent:WatchdogGraceSeconds", "WATCHDOG_GRACE_SECONDS",
+                AgentConfig.DefaultWatchdogGraceSeconds, min: 0),
+            MaxRestApiPages = GetInt(builder.Configuration, "Agent:MaxRestApiPages", "MAX_REST_API_PAGES",
+                AgentConfig.DefaultMaxRestApiPages, min: 1),
         };
 
         builder.Services.AddSingleton(agentConfig);
@@ -131,6 +125,7 @@ try
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<AgentLiveness>();
         builder.Services.AddSingleton<BlobStorageService>();
+        builder.Services.AddSingleton<IBlobStorage>(sp => sp.GetRequiredService<BlobStorageService>());
         builder.Services.AddTransient<SqlHandler>();
         builder.Services.AddTransient<RestApiHandler>();
         builder.Services.AddSingleton<HandlerFactory>();
@@ -155,4 +150,10 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static int GetInt(IConfiguration cfg, string key, string envVar, int fallback, int min = int.MinValue)
+{
+    var raw = cfg[key] ?? Environment.GetEnvironmentVariable(envVar);
+    return int.TryParse(raw, out var v) && v >= min ? v : fallback;
 }

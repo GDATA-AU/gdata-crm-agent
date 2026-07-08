@@ -6,7 +6,7 @@ namespace CrmAgent.Services;
 /// <summary>
 /// Helpers for uploading to the <c>erp-imports</c> Azure Blob Storage container.
 /// </summary>
-public sealed class BlobStorageService
+public sealed class BlobStorageService : IBlobStorage
 {
     private const string ContainerName = "erp-imports";
 
@@ -19,18 +19,6 @@ public sealed class BlobStorageService
             var serviceClient = new BlobServiceClient(config.AzureStorageConnectionString);
             return serviceClient.GetBlobContainerClient(ContainerName);
         });
-    }
-
-    /// <summary>
-    /// Upload a stream to blob storage.
-    /// </summary>
-    public async Task UploadStreamAsync(string blobName, Stream stream, CancellationToken ct = default)
-    {
-        var blobClient = _container.Value.GetBlobClient(blobName);
-        await blobClient.UploadAsync(stream, new BlobUploadOptions
-        {
-            HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
-        }, cancellationToken: ct);
     }
 
     /// <summary>

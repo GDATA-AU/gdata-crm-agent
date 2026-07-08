@@ -85,7 +85,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void OnUpdateReady(string version, string msiPath)
+    private void OnUpdateReady(string version)
     {
         _updateMenuItem.Text = $"Update to {version}";
         _updateMenuItem.Font = new Font(_updateMenuItem.Font, FontStyle.Bold);
@@ -126,37 +126,14 @@ public sealed class TrayApplicationContext : ApplicationContext
         Exit();
     }
 
-    private async Task CheckForUpdateManual()
-    {
-        _updateMenuItem.Text = "Checking…";
-        _updateMenuItem.Enabled = false;
-        try
-        {
-            await _updateService.CheckNowAsync();
-            // If no update was found (UpdateReady didn't fire), reset text
-            if (_updateService.AvailableVersion is null)
-            {
-                _updateMenuItem.Text = "No Updates Available";
-                // Reset back to normal after a few seconds
-                var resetTimer = new System.Windows.Forms.Timer { Interval = 3_000 };
-                resetTimer.Tick += (_, _) =>
-                {
-                    _updateMenuItem.Text = "Check for Updates…";
-                    resetTimer.Stop();
-                    resetTimer.Dispose();
-                };
-                resetTimer.Start();
-            }
-        }
-        catch
-        {
-            _updateMenuItem.Text = "Update Check Failed";
-        }
-        finally
-        {
-            _updateMenuItem.Enabled = true;
-        }
-    }
+    private Task CheckForUpdateManual() =>
+        UpdateCheckFlow.RunAsync(
+            _updateService,
+            text => _updateMenuItem.Text = text,
+            enabled => _updateMenuItem.Enabled = enabled,
+            noUpdateText: "No Updates Available",
+            failedText: "Update Check Failed",
+            idleText: "Check for Updates…");
 
     private void OnFirstIdle(object? sender, EventArgs e)
     {
@@ -231,12 +208,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _connectForm.Show();
     }
 
-    private static void OpenLogFolder()
-    {
-        var path = ConfigStore.ConfigDirectory;
-        if (Directory.Exists(path))
-            System.Diagnostics.Process.Start("explorer.exe", path);
-    }
+    private static void OpenLogFolder() => LogPaths.Open();
 
     private void ConfirmAndUninstall()
     {

@@ -231,100 +231,83 @@ public sealed class AgentWorker : BackgroundService
             }
 
             // ---------------------------------------------------------------
-            // Report "running"
+            // Report "running", then execute
             // ---------------------------------------------------------------
             await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate { Status = JobStatus.Running }, stoppingToken);
 
-            if (job.Preview)
-            {
-                // Preview mode: no heartbeat, return rows inline.
-                using var previewCts = CreateJobCts(stoppingToken);
-                _liveness.BeginJob(job.Id);
-                try
-                {
-                    var handler = _handlers.GetHandler(job);
-                    var result = await handler.ExecuteAsync(job, _ => { }, previewCts.Token);
-
-                    await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
-                    {
-                        Status = JobStatus.Completed,
-                        Progress = new JobProgress
-                        {
-                            ProcessedRows = result.ProcessedRows,
-                            PreviewData = result.PreviewRows,
-                        },
-                    }, stoppingToken);
-
-                    _logger.LogInformation("Preview job completed: {JobId} rows={Rows}", job.Id, result.ProcessedRows);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    _logger.LogInformation("Preview job {JobId} cancelled due to shutdown", job.Id);
-                    break;
-                }
-                catch (OperationCanceledException) when (previewCts.IsCancellationRequested)
-                {
-                    // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
-                    // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. an
-                    // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
-                    _logger.LogError("Preview job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
-                        job.Id, _config.MaxJobDurationSeconds);
-
-                    await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
-                    {
-                        Status = JobStatus.Failed,
-                        Error = $"Job exceeded the maximum duration of {_config.MaxJobDurationSeconds}s and was cancelled.",
-                    }, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Preview job failed: {JobId}", job.Id);
-
-                    await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
-                    {
-                        Status = JobStatus.Failed,
-                        Error = SanitizeErrorMessage(ex),
-                    }, CancellationToken.None);
-                }
-                finally
-                {
-                    _liveness.EndJob();
-                }
-
-                await WaitAsync(baseInterval, stoppingToken);
-                continue;
-            }
-
-            // ---------------------------------------------------------------
-            // Start heartbeat timer
-            // ---------------------------------------------------------------
-            var progressLock = new object();
-            var lastProgress = new JobProgress { ProcessedRows = 0 };
-            using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            var heartbeatTask = RunHeartbeatAsync(job.Id, () => { lock (progressLock) { return lastProgress; } }, heartbeatCts.Token);
-
-            // Per-job deadline: bounds the total wall-clock time of the handler so a slow or
-            // wedged extraction cannot hang the poll loop indefinitely.
-            using var jobCts = CreateJobCts(stoppingToken);
-            _liveness.BeginJob(job.Id);
-
-            // ---------------------------------------------------------------
-            // Execute the handler
-            // ---------------------------------------------------------------
             try
             {
-                var handler = _handlers.GetHandler(job);
+                await ExecuteJobAsync(job, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
 
-                var result = await handler.ExecuteAsync(job, progress =>
+            // Sleep before next poll
+            await WaitAsync(baseInterval, stoppingToken);
+        }
+
+    }
+
+    /// <summary>
+    /// Executes a single (non-ping) job and reports its terminal status to the portal.
+    /// Handles both preview and normal jobs:
+    /// <list type="bullet">
+    /// <item>A heartbeat runs only for non-preview jobs and is cancelled + awaited on every exit path.</item>
+    /// <item>Shutdown (stoppingToken cancelled) is logged and rethrown so the poll loop breaks.</item>
+    /// <item>A tripped per-job deadline reports Failed with the max-duration message and returns.</item>
+    /// <item>All failure reports use <see cref="CancellationToken.None"/>; generic failures are sanitised.</item>
+    /// </list>
+    /// </summary>
+    private async Task ExecuteJobAsync(Job job, CancellationToken stoppingToken)
+    {
+        var isPreview = job.Preview;
+
+        // Per-job deadline: bounds the total wall-clock time of the handler so a slow or
+        // wedged extraction cannot hang the poll loop indefinitely.
+        using var jobCts = CreateJobCts(stoppingToken);
+
+        // Heartbeat runs only for non-preview jobs.
+        var progressLock = new object();
+        var lastProgress = new JobProgress { ProcessedRows = 0 };
+        CancellationTokenSource? heartbeatCts = null;
+        Task? heartbeatTask = null;
+        if (!isPreview)
+        {
+            heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
+            heartbeatTask = RunHeartbeatAsync(job.Id, () => { lock (progressLock) { return lastProgress; } }, heartbeatCts.Token);
+        }
+
+        _liveness.BeginJob(job.Id);
+        try
+        {
+            var handler = _handlers.GetHandler(job);
+
+            Action<JobProgress> onProgress = isPreview
+                ? _ => { }
+                : progress => { lock (progressLock) { lastProgress = progress; } };
+
+            var result = await handler.ExecuteAsync(job, onProgress, jobCts.Token);
+
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+
+            if (isPreview)
+            {
+                await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
                 {
-                    lock (progressLock) { lastProgress = progress; }
-                }, jobCts.Token);
+                    Status = JobStatus.Completed,
+                    Progress = new JobProgress
+                    {
+                        ProcessedRows = result.ProcessedRows,
+                        PreviewData = result.PreviewRows,
+                    },
+                }, stoppingToken);
 
-                // Stop heartbeat
-                await heartbeatCts.CancelAsync();
-                await AwaitHeartbeat(heartbeatTask);
-
-                // Report completion
+                _logger.LogInformation("Preview job completed: {JobId} rows={Rows}", job.Id, result.ProcessedRows);
+            }
+            else
+            {
                 if (string.IsNullOrEmpty(result.BlobName))
                     throw new InvalidOperationException($"Handler returned no BlobName for non-preview job {job.Id}.");
 
@@ -338,52 +321,54 @@ public sealed class AgentWorker : BackgroundService
                 _logger.LogInformation("Job completed: {JobId} rows={Rows} blob={BlobName}",
                     job.Id, result.ProcessedRows, result.BlobName);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                await heartbeatCts.CancelAsync();
-                await AwaitHeartbeat(heartbeatTask);
-                _logger.LogInformation("Job {JobId} cancelled due to shutdown", job.Id);
-                break;
-            }
-            catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
-            {
-                // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
-                // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. a REST
-                // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
-                await heartbeatCts.CancelAsync();
-                await AwaitHeartbeat(heartbeatTask);
-
-                _logger.LogError("Job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
-                    job.Id, _config.MaxJobDurationSeconds);
-
-                await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
-                {
-                    Status = JobStatus.Failed,
-                    Error = $"Job exceeded the maximum duration of {_config.MaxJobDurationSeconds}s and was cancelled.",
-                }, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                await heartbeatCts.CancelAsync();
-                await AwaitHeartbeat(heartbeatTask);
-
-                _logger.LogError(ex, "Job failed: {JobId}", job.Id);
-
-                await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
-                {
-                    Status = JobStatus.Failed,
-                    Error = SanitizeErrorMessage(ex),
-                }, CancellationToken.None);
-            }
-            finally
-            {
-                _liveness.EndJob();
-            }
-
-            // Sleep before next poll
-            await WaitAsync(baseInterval, stoppingToken);
         }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            _logger.LogInformation("Job {JobId} cancelled due to shutdown", job.Id);
+            throw;
+        }
+        catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
+        {
+            // Per-job deadline tripped (not a shutdown) — fail the job and keep polling.
+            // Filtered on the CTS so we don't misreport unrelated timeouts (e.g. an
+            // HttpClient.Timeout TaskCanceledException) as a max-duration breach.
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
 
+            _logger.LogError("Job {JobId} exceeded the maximum duration of {MaxSec}s and was cancelled",
+                job.Id, _config.MaxJobDurationSeconds);
+
+            await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
+            {
+                Status = JobStatus.Failed,
+                Error = $"Job exceeded the maximum duration of {_config.MaxJobDurationSeconds}s and was cancelled.",
+            }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+
+            _logger.LogError(ex, "Job failed: {JobId}", job.Id);
+
+            await _portal.ReportJobStatusAsync(job.Id, new JobStatusUpdate
+            {
+                Status = JobStatus.Failed,
+                Error = SanitizeErrorMessage(ex),
+            }, CancellationToken.None);
+        }
+        finally
+        {
+            heartbeatCts?.Dispose();
+            _liveness.EndJob();
+        }
+    }
+
+    /// <summary>Cancels and awaits the heartbeat task if one is running; a no-op for preview jobs.</summary>
+    private static async Task StopHeartbeatAsync(CancellationTokenSource? cts, Task? task)
+    {
+        if (cts is null || task is null) return;
+        await cts.CancelAsync();
+        await AwaitHeartbeat(task);
     }
 
     /// <summary>
@@ -404,11 +389,7 @@ public sealed class AgentWorker : BackgroundService
         // Redact full URLs (may contain tokens/keys in query strings)
         msg = Regex.Replace(msg,
             @"https?://[^\s""'<>]+",
-            m =>
-            {
-                var idx = m.Value.IndexOf('?');
-                return idx >= 0 ? m.Value[..idx] + "?[REDACTED]" : m.Value;
-            },
+            m => Redaction.RedactUrl(m.Value),
             RegexOptions.IgnoreCase);
 
         const int maxLength = 500;

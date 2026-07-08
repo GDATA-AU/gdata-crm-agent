@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using CrmAgent.Handlers;
+using CrmAgent.Services;
 
 namespace CrmAgent.Tests;
 
@@ -76,14 +77,14 @@ public class RestApiHandlerTests
     [Fact]
     public void RedactUrl_StripsQueryString()
     {
-        var result = RestApiHandler.RedactUrl("https://api.example.com/v1/data?apiKey=secret&token=abc");
+        var result = Redaction.RedactUrl("https://api.example.com/v1/data?apiKey=secret&token=abc");
         Assert.Equal("https://api.example.com/v1/data?[REDACTED]", result);
     }
 
     [Fact]
     public void RedactUrl_PreservesUrlWithoutQueryString()
     {
-        var result = RestApiHandler.RedactUrl("https://api.example.com/v1/data");
+        var result = Redaction.RedactUrl("https://api.example.com/v1/data");
         Assert.Equal("https://api.example.com/v1/data", result);
     }
 

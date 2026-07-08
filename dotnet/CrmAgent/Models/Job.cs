@@ -35,6 +35,9 @@ public enum JobStatus
 [JsonConverter(typeof(JsonStringEnumConverter<PaginationType>))]
 public enum PaginationType
 {
+    [JsonStringEnumMemberName("single")]
+    Single,
+
     [JsonStringEnumMemberName("offset")]
     Offset,
 
@@ -65,7 +68,7 @@ public enum AuthType
 // Job configuration
 // ---------------------------------------------------------------------------
 
-public sealed class RestApiPagination
+public sealed record RestApiPagination
 {
     public required PaginationType Type { get; init; }
     public string? PageParam { get; init; }
@@ -73,7 +76,6 @@ public sealed class RestApiPagination
     public int? PageSize { get; init; }
     public string? CursorField { get; init; }
     public string? DataField { get; init; }
-    public string? TotalField { get; init; }
 }
 
 /// <summary>
@@ -125,7 +127,7 @@ public sealed class SqlJobConfig
     public required string[] HashFields { get; init; }
 }
 
-public sealed class RestApiJobConfig
+public sealed record RestApiJobConfig
 {
     public required string BaseUrl { get; init; }
     public required string Method { get; init; }
@@ -168,12 +170,17 @@ public sealed class JobConfig
 
     public SqlJobConfig ToSqlConfig(Job job) => new()
     {
-        Server = Server ?? throw new InvalidOperationException("SQL job config missing 'server'"),
-        Database = Database ?? throw new InvalidOperationException("SQL job config missing 'database'"),
-        Query = Query ?? throw new InvalidOperationException("SQL job config missing 'query'"),
+        Server = RequireNonEmpty(Server, "server"),
+        Database = RequireNonEmpty(Database, "database"),
+        Query = RequireNonEmpty(Query, "query"),
         BlobPath = BlobPath ?? job.BlobPath ?? $"jobs/{job.Id}",
         HashFields = HashFields ?? job.HashFields ?? [],
     };
+
+    private static string RequireNonEmpty(string? value, string field) =>
+        string.IsNullOrEmpty(value)
+            ? throw new InvalidOperationException($"SQL job config missing '{field}'")
+            : value;
 
     public RestApiJobConfig ToRestApiConfig(Job job) => new()
     {
@@ -216,7 +223,6 @@ public sealed class PollResponse
 public sealed class JobProgress
 {
     public required int ProcessedRows { get; init; }
-    public int? TotalRows { get; init; }
     public string? Message { get; init; }
     public List<Dictionary<string, object?>>? PreviewData { get; init; }
 }

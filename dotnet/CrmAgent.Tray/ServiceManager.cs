@@ -6,7 +6,7 @@ namespace CrmAgent.Tray;
 
 /// <summary>
 /// Thin wrapper around <see cref="ServiceController"/> for querying and
-/// controlling the crm-agent Windows service.
+/// controlling the gdata-agent Windows service.
 /// Start/Stop fall back to an elevated <c>sc.exe</c> process when the
 /// tray app is running without admin rights.
 /// </summary>
