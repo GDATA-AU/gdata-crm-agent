@@ -275,7 +275,7 @@ public sealed class AgentWorker : BackgroundService
         Task? heartbeatTask = null;
         if (!isPreview)
         {
-            heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
             heartbeatTask = RunHeartbeatAsync(job.Id, () => { lock (progressLock) { return lastProgress; } }, heartbeatCts.Token);
         }
 
