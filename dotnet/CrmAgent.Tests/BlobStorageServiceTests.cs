@@ -1,3 +1,4 @@
+using Azure;
 using CrmAgent.Services;
 
 namespace CrmAgent.Tests;
@@ -63,5 +64,31 @@ public class BlobStorageServiceTests
         var timestamp = new DateTime(2026, 3, 13, 2, 30, 0, DateTimeKind.Utc);
         var result = BlobStorageService.BuildBlobName(@"pathway\snapshots", timestamp);
         Assert.Equal("pathway/snapshots/2026-03-13T02-30-00Z.ndjson.gz", result);
+    }
+
+    [Fact]
+    public void IsContainerNotFoundMatchesAzure404ContainerNotFound()
+    {
+        var ex = new RequestFailedException(404, "The specified container does not exist.", "ContainerNotFound", null);
+        Assert.True(BlobStorageService.IsContainerNotFound(ex));
+    }
+
+    [Theory]
+    [InlineData(404, "BlobNotFound")]   // missing blob, not a missing container
+    [InlineData(403, "AuthenticationFailed")]
+    [InlineData(500, "InternalError")]
+    public void IsContainerNotFoundIgnoresOtherFailures(int status, string errorCode)
+    {
+        var ex = new RequestFailedException(status, "boom", errorCode, null);
+        Assert.False(BlobStorageService.IsContainerNotFound(ex));
+    }
+
+    [Fact]
+    public void ContainerNotFoundMessageNamesContainerAndSetting()
+    {
+        // The message must stay actionable: it should tell the operator which container is
+        // missing and which setting points at the storage account.
+        Assert.Contains("erp-imports", BlobStorageService.ContainerNotFoundMessage);
+        Assert.Contains("AzureStorageConnectionString", BlobStorageService.ContainerNotFoundMessage);
     }
 }

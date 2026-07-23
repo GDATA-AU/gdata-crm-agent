@@ -1,3 +1,4 @@
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 
@@ -9,6 +10,26 @@ namespace CrmAgent.Services;
 public sealed class BlobStorageService : IBlobStorage
 {
     private const string ContainerName = "erp-imports";
+
+    /// <summary>
+    /// Actionable error surfaced (to the agent log and the portal job status) when the
+    /// target container is missing. Deliberately names the container and the setting to
+    /// check, since the raw Azure error ("The specified container does not exist.") gives
+    /// no indication of which container or storage account is at fault.
+    /// </summary>
+    internal static string ContainerNotFoundMessage =>
+        $"Azure Blob container '{ContainerName}' was not found in the configured storage account. " +
+        "The agent does not create it — the container must already exist in the storage account " +
+        "that Agent:AzureStorageConnectionString points to. Verify the connection string targets " +
+        $"the correct account and that the '{ContainerName}' container has been created.";
+
+    /// <summary>
+    /// True when <paramref name="ex"/> is Azure's 404/ContainerNotFound response, as opposed
+    /// to a missing blob or any other request failure.
+    /// </summary>
+    internal static bool IsContainerNotFound(RequestFailedException ex)
+        => ex.Status == 404
+           && string.Equals(ex.ErrorCode, "ContainerNotFound", StringComparison.OrdinalIgnoreCase);
 
     private readonly Lazy<BlobContainerClient> _container;
 
@@ -29,10 +50,21 @@ public sealed class BlobStorageService : IBlobStorage
     public async Task<Stream> OpenWriteStreamAsync(string blobName, CancellationToken ct = default)
     {
         var blobClient = _container.Value.GetBlobClient(blobName);
-        return await blobClient.OpenWriteAsync(overwrite: true, new BlobOpenWriteOptions
+        try
         {
-            HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
-        }, cancellationToken: ct);
+            return await blobClient.OpenWriteAsync(overwrite: true, new BlobOpenWriteOptions
+            {
+                HttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" },
+            }, cancellationToken: ct);
+        }
+        catch (RequestFailedException ex) when (IsContainerNotFound(ex))
+        {
+            // Translate the opaque Azure 404 ("The specified container does not exist.")
+            // into an actionable message. The agent deliberately does not create the
+            // container — that is the storage owner's responsibility — so surface exactly
+            // what is missing and where to fix it.
+            throw new InvalidOperationException(ContainerNotFoundMessage, ex);
+        }
     }
 
     /// <summary>
