@@ -1,6 +1,8 @@
 # MSI packaging (WiX v4)
 
-This folder contains an initial MSI scaffold for the CRM agent.
+WiX v4 sources for the CRM agent installer. The `Build Windows MSI` workflow builds this on
+every push to `main` that touches `dotnet/` or `installer/`, and publishes a GitHub Release
+when a `v*` tag is pushed. The steps below are for reproducing that build locally on Windows.
 
 ## Prerequisites
 
@@ -47,7 +49,8 @@ Expected output:
 
 ## Notes
 
-- This is a practical scaffold intended to be iterated with validation on a Windows VM.
-- This installer currently expects single-file publish outputs.
-- If your code-signing pipeline is ready, add signing in CI for both MSI and binaries.
-- If you want an "Launch tray app" checkbox on final dialog, add `WixToolset.UI.wixext` and an exit dialog action.
+- The installer expects single-file publish outputs — use the `dotnet publish` flags above.
+- Never change the `UpgradeCode` in `Product.wxs`; it is what makes in-place upgrades work
+  for already-installed agents.
+- Not yet done: code-signing for the MSI and binaries, and a "Launch tray app" checkbox on
+  the exit dialog (needs `WixToolset.UI.wixext`).

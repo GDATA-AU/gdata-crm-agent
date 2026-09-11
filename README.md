@@ -19,7 +19,7 @@ The GDATA CRM Agent runs as a background Windows service on your network. It per
 
 ## Installation
 
-1. Download the latest installer (`CrmAgentSetup.msi`) from [GitHub Releases](https://github.com/GDATA-AU/gdata-crm-agent/releases)
+1. Download the latest installer (`gdata-crm-agent-installer.msi`) from [GitHub Releases](https://github.com/GDATA-AU/gdata-crm-agent/releases)
 2. Run the installer — it will install the agent service and the system tray application
 3. The tray application launches automatically and opens the setup wizard on first run
 4. Enter the Portal URL, API key, and storage connection string provided by GDATA
