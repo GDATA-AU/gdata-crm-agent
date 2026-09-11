@@ -76,7 +76,9 @@ sc start gdata-agent       # Start
 
 ## Configuration
 
-Every setting can be supplied either in `appsettings.json` or as an environment variable. **The config file wins; environment variables are the fallback.** Empty strings in the file are treated as missing, so the placeholders shipped in `appsettings.json` don't shadow environment variables.
+Every setting can be supplied either in `appsettings.json` or as an environment variable. **The config file wins; environment variables are the fallback.**
+
+Only the three credential settings treat an empty string as missing — that is what stops the blank placeholders shipped in `appsettings.json` from shadowing `PORTAL_URL`, `AGENT_API_KEY` and `AZURE_STORAGE_CONNECTION_STRING`. For every other setting an empty string is a value: it shadows the environment variable, fails to parse, and the default is used. **To configure an optional setting by environment variable, leave its key out of the file entirely rather than blanking it.**
 
 On an installed agent the tray app writes credentials to `%ProgramData%\GDATA CRM Agent\appsettings.json`, which is layered over the copy in `Program Files` — so IT staff never need to edit files inside `Program Files`.
 

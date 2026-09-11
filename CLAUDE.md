@@ -18,7 +18,9 @@ Dev containers are Linux; the tray targets `net10.0-windows` and builds (via
 
 - **Config precedence:** `%ProgramData%\GDATA CRM Agent\appsettings.json` (written by the
   tray) is layered over the project's `appsettings.json` and **wins over env vars**; env
-  vars are the fallback. Empty strings count as missing. See `Program.cs`.
+  vars are the fallback. Empty string counts as missing for the three credential settings
+  only (`NonEmpty` in `Program.cs`) — blanking any other key shadows its env var and
+  silently falls back to the default, so omit the key instead.
 - **Service names differ by platform:** Windows SCM service is `gdata-agent`; the Linux
   systemd unit is `crm-agent`.
 - **Log format is an API.** Serilog writes one JSON object per line and the tray's
