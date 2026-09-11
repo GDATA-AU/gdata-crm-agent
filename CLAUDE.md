@@ -12,7 +12,8 @@ dotnet test dotnet/CrmAgent.Tests/CrmAgent.Tests.csproj      # xunit
 ```
 
 Dev containers are Linux; the tray targets `net10.0-windows` and builds (via
-`EnableWindowsTargeting`) but cannot run there. The MSI only builds on Windows CI.
+`EnableWindowsTargeting`) but cannot run there. The MSI builds on Windows only — locally
+or in CI.
 
 ## Non-obvious behaviour
 
@@ -30,9 +31,14 @@ Dev containers are Linux; the tray targets `net10.0-windows` and builds (via
 
 ## Invariants — do not weaken
 
-- SQL is read-only: queries must start with `SELECT`/`WITH`, and connections always use
-  Windows Integrated Security. Never accept SQL `User Id`/`Password` from a job.
-- Redact URLs (`Redaction.RedactUrl`) and never log API keys, connection strings, or row data.
+- Connections always use Windows Integrated Security. Never accept SQL `User Id`/`Password`
+  from a job.
+- `SqlHandler` rejects any query whose first token isn't `SELECT`/`WITH`. Treat that as a
+  guard rail, not a guarantee — `WITH cte AS (...) DELETE ...` passes it. The read-only
+  promise rests on the service account holding `db_datareader` and nothing more.
+- Put every URL through `Redaction.RedactUrl` before logging it, and never log API keys,
+  connection strings, or row data. Note `PortalClient` still logs whole poll responses at
+  Debug, so don't lower the default `Information` level on a production agent.
 - Every long-running path needs a timeout/cancellation token — see the defaults in
   `AgentConfig`. The watchdog `FailFast`s a wedged process; keep that path intact.
 - Delete partial blobs when a job fails (see `SqlHandler`), so the portal never diffs a

@@ -62,8 +62,9 @@ Self-contained output needs no .NET runtime on the target machine; framework-dep
 Publish first, edit `appsettings.json` in the publish folder, then run as Administrator:
 
 ```powershell
-install-service.bat              # install and start
-install-service.bat --uninstall  # stop and remove
+cd dotnet\CrmAgent
+.\install-service.bat              # install and start
+.\install-service.bat --uninstall  # stop and remove
 ```
 
 The Windows service is registered as **`gdata-agent`** (the Linux systemd unit installed by `install-linux.sh` is named `crm-agent`):
@@ -89,7 +90,7 @@ On an installed agent the tray app writes credentials to `%ProgramData%\GDATA CR
 | `Agent:AzureStorageConnectionString` | `AZURE_STORAGE_CONNECTION_STRING` | Yes | — | Azure Blob Storage connection string |
 | `Agent:PollIntervalMs` | `POLL_INTERVAL_MS` | | `5000` | Job poll interval |
 | `Agent:HeartbeatIntervalMs` | `HEARTBEAT_INTERVAL_MS` | | `5000` | Heartbeat interval |
-| `Agent:SqlTrustServerCertificate` | `SQL_TRUST_SERVER_CERTIFICATE` | | `true` | Skip TLS validation for self-signed on-prem SQL certificates |
+| `Agent:SqlTrustServerCertificate` | `SQL_TRUST_SERVER_CERTIFICATE` | | `true` | Accept **any** SQL Server certificate without validation. Defaults on because on-prem instances typically use self-signed certificates; set `false` where the server has a trusted certificate |
 | `Agent:SqlCommandTimeoutSeconds` | `SQL_COMMAND_TIMEOUT_SECONDS` | | `300` | Per-command SQL timeout; `0` disables |
 | `Agent:SqlConnectTimeoutSeconds` | `SQL_CONNECT_TIMEOUT_SECONDS` | | `15` | SQL connection-open timeout |
 | `Agent:RestApiTimeoutSeconds` | `REST_API_TIMEOUT_SECONDS` | | `300` | Timeout per outbound REST API page request |
@@ -101,6 +102,8 @@ Disabling the timeouts or the watchdog is not recommended — they are what stop
 
 ### SQL connection strings
 
-No local connection string configuration is needed for SQL Server. The portal sends `server` and `database` with each SQL job, and the agent builds the connection string locally using **Windows Integrated Security** (the service account). SQL User Id/Password credentials are never accepted, and only `SELECT`/`WITH` queries are executed.
+No local connection string configuration is needed for SQL Server. The portal sends `server` and `database` with each SQL job, and the agent builds the connection string locally using **Windows Integrated Security** (the service account). SQL User Id/Password credentials are never accepted.
 
-The service account must have `db_datareader` access on the target databases.
+The agent rejects any query whose first token is not `SELECT` or `WITH`. That is a guard rail against obvious mistakes, not a security boundary — a CTE of the form `WITH cte AS (...) DELETE ...` starts with `WITH` and would pass it.
+
+**What actually keeps the agent read-only is the database grant.** Give the service account `db_datareader` on the target databases and nothing more; then a write cannot succeed regardless of what query the portal sends.

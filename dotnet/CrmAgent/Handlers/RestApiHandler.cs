@@ -47,7 +47,7 @@ public sealed partial class RestApiHandler : IJobHandler
         if (job.Preview)
         {
             _logger.LogInformation("Starting REST API preview for job {JobId} url={BaseUrl} (limit={Limit})",
-                job.Id, config.BaseUrl, IJobHandler.PreviewRowLimit);
+                job.Id, Redaction.RedactUrl(config.BaseUrl), IJobHandler.PreviewRowLimit);
 
             // For date-range configs, scope to the first window only.
             var previewDateRange = config.DateRange ?? TryAutoDetectDateRange(config);
@@ -65,7 +65,7 @@ public sealed partial class RestApiHandler : IJobHandler
         var blobName = BlobStorageService.BuildBlobName(config.BlobPath, timestamp);
 
         _logger.LogInformation("Starting REST API extraction for job {JobId} url={BaseUrl} blob={BlobName}",
-            job.Id, config.BaseUrl, blobName);
+            job.Id, Redaction.RedactUrl(config.BaseUrl), blobName);
 
         // Check if date-range chunking is required (explicit config or auto-detected)
         var dateRange = config.DateRange ?? TryAutoDetectDateRange(config);
